@@ -5,6 +5,7 @@ import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras.layers import Dense
 from sklearn.model_selection import train_test_split
+from Image_to_CSV import *  # import all functions and classes from Image_to_CSV.py
 
 # load the training dataset
 dataset = np.loadtxt('/u/kieranm/Documents/Dataset/letters.csv', delimiter=',')
@@ -12,7 +13,7 @@ dataset = np.loadtxt('/u/kieranm/Documents/Dataset/letters.csv', delimiter=',')
 #select a random subset of the dataset
 np.random.seed(42)  # for reproducibility
 np.random.shuffle(dataset)  # shuffle the dataset randomlyc
-dataset = dataset[:5000]  # select the first 5000 samples for training
+dataset = dataset[:20000]  # select the first 5000 samples for training
 
 # split the dataset into input (X) and output (y) variables
 X = dataset[:, 1:]  # input features (all columns except the first)
@@ -48,7 +49,7 @@ model.add(Dense(num_classes, activation='softmax'))  # add the output layer with
 # compile the model
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  # use categorical crossentropy loss function, Adam optimizer, and accuracy metric
 # fit the model to the training data
-model.fit(X_train, y_train_one_hot, epochs=60, batch_size=32, verbose=1)  # train the model for 20 epochs with a batch size of 32
+model.fit(X_train, y_train_one_hot, epochs=20, batch_size=32, verbose=1)  # train the model for 20 epochs with a batch size of 32
 # evaluate the model on the test data
 _, accuracy = model.evaluate(X_test, y_test_one_hot, verbose=0)  # evaluate the model on the test data
 print('Test Accuracy: %.2f' % (accuracy * 100))  # print the accuracy as a percentage
@@ -70,3 +71,24 @@ for i in range(10):
     plt.axis('off')
 plt.tight_layout()
 plt.show()
+
+#convert 28x28 images to CSV format for Keras model training
+#convert_images_to_csv('/u/kieranm/Documents/Dataset/Initials', '/u/kieranm/Documents/Dataset/initials.csv')  # convert the images in the folder to a CSV file
+
+#evaluate the model on the new 28x28 images
+
+new_images = np.loadtxt('/u/kieranm/Documents/Dataset/initials.csv', delimiter=',') # load your new images here
+new_images_X = new_images[:, 1:]  # skip the label column
+new_images_X = new_images_X / 255.0  # normalize the new images
+predictions = model.predict(new_images_X)  # predict the probabilities for the new images
+predicted_classes = np.argmax(predictions, axis=1) + 1  # get the index of the highest probability and add 1 to match the letter encoding (1-26)
+predicted_letters = [chr(c + 64) for c in predicted_classes]  # convert predictions to letters (A=1, so chr(65)='A')
+print('Predicted letters for new images:', predicted_letters)  # print the predicted letters for the new images
+plt.figure(figsize=(10, 5))
+for i in range(len(new_images_X)):
+    plt.subplot(2, 5, i + 1)
+    plt.imshow(new_images_X[i].reshape(28, 28), cmap='gray')
+    plt.title(f'Predicted: {predicted_letters[i]}')
+    plt.axis('off')
+plt.tight_layout()
+plt.show()  # show the plot of new images with predicted labels
