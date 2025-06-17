@@ -49,7 +49,7 @@ model.add(Dense(num_classes, activation='softmax'))  # add the output layer with
 # compile the model
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  # use categorical crossentropy loss function, Adam optimizer, and accuracy metric
 # fit the model to the training data
-model.fit(X_train, y_train_one_hot, epochs=20, batch_size=32, verbose=1)  # train the model for 20 epochs with a batch size of 32
+model.fit(X_train, y_train_one_hot, epochs=90, batch_size=32, verbose=1)  # train the model for 20 epochs with a batch size of 32
 # evaluate the model on the test data
 _, accuracy = model.evaluate(X_test, y_test_one_hot, verbose=0)  # evaluate the model on the test data
 print('Test Accuracy: %.2f' % (accuracy * 100))  # print the accuracy as a percentage
@@ -92,3 +92,16 @@ for i in range(len(new_images_X)):
     plt.axis('off')
 plt.tight_layout()
 plt.show()  # show the plot of new images with predicted labels
+
+'''To do
+1. Add more layers to the model to improve accuracy.
+2. Experiment with different activation functions.
+3. Use dropout layers to prevent overfitting.
+4. Save the model after training for future use.
+5. Implement data augmentation to increase the dataset size.
+6. Use callbacks to monitor training and save the best model.
+7. Implement early stopping to prevent overfitting.
+8. Test the model on a separate validation set.
+9. Visualize the training history to analyze performance.
+10. Implement a confusion matrix to analyze misclassifications.
+'''
