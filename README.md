@@ -4,4 +4,6 @@ First-Neural-Network.py - Neural network built in python not using any ML librar
 
 First-Keras-Network.py - Neural network built using Keras, following Jason Brownlee's tutorial.
 
-First-Pytorch-Network.py - Ne
+Keras-Initials.py - Neural network trained to identify handwritten letters A-Z.
+
+First-Pytorch-Network.py - Neural network built using Pytorch. Implementing the same as Keras-Initials.py
