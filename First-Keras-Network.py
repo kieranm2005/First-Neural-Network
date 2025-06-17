@@ -26,10 +26,15 @@ The accuracy metric is used to evaluate the performance of the model during trai
 model.compile(loss='binary_crossentropy', optimizer='adam', metrics=['accuracy']) # use binary crossentropy loss function, Adam optimizer, and accuracy metric
 
 # fit the model to the training data
-model.fit(X, y, epochs=150, batch_size=10) # train the model for 150 epochs with a batch size of 10
+model.fit(X, y, epochs=150, batch_size=10, verbose=0) # train the model for 150 epochs with a batch size of 10
 
 # evaluate the model on the training data
-_, accuracy = model.evaluate(X, y) # evaluate the model on the training data
+_, accuracy = model.evaluate(X, y, verbose=0) # evaluate the model on the training data
 # the above line returns the loss and accuracy of the model on the training data
 print('Accuracy: %.2f' % (accuracy * 100)) # print the accuracy as a percentage
+
+# make probability predictions with the model
+predictions = model.predict(X) # predict the probabilities for the input data
+# round the predictions to get binary outcomes
+rounded = [round(x[0]) for x in predictions] # round the probabilities to 0 or 1
 
