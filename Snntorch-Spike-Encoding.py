@@ -228,3 +228,69 @@ plt.rcParams['animation.ffmpeg_path'] = '/usr/bin/ffmpeg'  # Set the path to ffm
 HTML(anim.to_html5_video())  # Display the animation as HTML5 video
 anim.save("spike_mnist_latency.mp4")  # Save the animation as an mp4 file
 print(f"The corresponding target is: {targets_it[0]}")  # Print the target for the sample
+
+'''Delta modulation - event-driven spiking'''
+
+# Create a tensor with some fake time series data
+data = torch.Tensor([0,1,0,2,8,-20,20,-5,0,1,0])
+
+# Plot the tensor
+plt.plot(data)
+
+plt.title("Some fake time-series data")
+plt.xlabel("Time step")
+plt.ylabel("Voltage (mV)")
+plt.show()
+
+# Convert data
+spike_data = spikegen.delta(data, threshold=4)
+
+# Create fig, ax
+fig = plt.figure(facecolor="w", figsize=(8, 1))
+ax = fig.add_subplot(111)
+
+# Raster plot of delta converted data
+splt.raster(spike_data, ax, c="black")
+
+plt.title("Input Neuron")
+plt.xlabel("Time step")
+plt.yticks([])
+plt.xlim(0, len(data))
+plt.show()
+
+# Convert data
+spike_data = spikegen.delta(data, threshold=4, off_spike=True)
+
+# Create fig, ax
+fig = plt.figure(facecolor="w", figsize=(8, 1))
+ax = fig.add_subplot(111)
+
+# Raster plot of delta converted data
+splt.raster(spike_data, ax, c="black")
+
+plt.title("Input Neuron")
+plt.xlabel("Time step")
+plt.yticks([])
+plt.xlim(0, len(data))
+plt.show()
+
+print(spike_data)
+
+# Create a random spike train
+spike_prob = torch.rand((num_steps, 28, 28), dtype=dtype) * 0.5
+spike_rand = spikegen.rate_conv(spike_prob)
+
+fig, ax = plt.subplots()
+anim = splt.animator(spike_rand, fig, ax)
+
+HTML(anim.to_html5_video())
+
+fig = plt.figure(facecolor="w", figsize=(10, 5))
+ax = fig.add_subplot(111)
+splt.raster(spike_rand[:, 0].view(num_steps, -1), ax, s=25, c="black")
+
+plt.title("Input Layer")
+plt.xlabel("Time step")
+plt.ylabel("Neuron Number")
+plt.show()
+
