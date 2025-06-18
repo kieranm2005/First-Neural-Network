@@ -110,3 +110,10 @@ print(f"The corresponding target is: {targets_it[0]}") # Print the target for th
 
 # Again, but with spiking frequency of 25%
 spike_data = spikegen.rate(data_it, num_steps=num_steps, rate=0.25)  # Set the rate to 0.25
+spike_data_sample2 = spike_data[:, 0, 0]  # Get the sample again
+fig, ax = plt.subplots()  # Create a figure and axis for plotting
+anim = splt.animator(spike_data_sample2, fig, ax)  # Create the animator for the new sample
+plt.rcParams['animation.ffmpeg_path'] = '/usr/bin/ffmpeg'  # Set the path to ffmpeg for saving the animation
+HTML(anim.to_html5_video())  # Display the animation as HTML5 video
+anim.save("spike_mnist_test_25.mp4")  # Save the animation as an mp4 file
+print(f"The corresponding target is: {targets_it[0]}")  # Print the target for the sample
