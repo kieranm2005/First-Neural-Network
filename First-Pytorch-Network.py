@@ -21,7 +21,7 @@ model.add_module("outact", nn.Sigmoid())
 nn.Linear(764, 100, device="cpu")
 
 loss_fn = nn.CrossEntropyLoss()
-loss = loss_fn(output, label)
+loss = loss_fn(y_pred, y)
 
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 

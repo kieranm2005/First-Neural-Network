@@ -1,4 +1,4 @@
-'''This neural network will be trained to recognize handwritten letters from the dataset.'''
+'''This neural network will be trained to recognize handwritten letters from the dataset. It is a fully connected neural network using Keras with TensorFlow backend. The dataset is a CSV file containing images of letters A-Z, each represented as a flattened array of pixel values. The model will be trained to classify these images into their corresponding letters.'''
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -49,7 +49,7 @@ model.add(Dense(num_classes, activation='softmax'))  # add the output layer with
 # compile the model
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])  # use categorical crossentropy loss function, Adam optimizer, and accuracy metric
 # fit the model to the training data
-model.fit(X_train, y_train_one_hot, epochs=90, batch_size=32, verbose=1)  # train the model for 20 epochs with a batch size of 32
+model.fit(X_train, y_train_one_hot, epochs=20, batch_size=32, verbose=1)  # train the model for 20 epochs with a batch size of 32
 # evaluate the model on the test data
 _, accuracy = model.evaluate(X_test, y_test_one_hot, verbose=0)  # evaluate the model on the test data
 print('Test Accuracy: %.2f' % (accuracy * 100))  # print the accuracy as a percentage
