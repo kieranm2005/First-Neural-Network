@@ -110,7 +110,11 @@ print(f"The total accuracy on the test set is: {test_acc * 100:.2f}%")
 
 optimizer = torch.optim.Adam(net.parameters(), lr=1e-2)
 scheduler = StepLR(optimizer, step_size=5, gamma=0.5)  # Halve LR every 5 epochs
-num_epochs = 1
+num_epochs = 50  # Increase for early stopping to be meaningful
+patience = 5     # Number of epochs to wait for improvement
+best_acc = 0.0
+epochs_no_improve = 0
+
 loss_hist = []
 test_acc_hist = []
 counter = 0
@@ -149,6 +153,24 @@ for epoch in range(num_epochs):
                 test_acc_hist.append(test_acc.item())
 
         counter += 1
+
+    # End of epoch: check test accuracy for early stopping
+    with torch.no_grad():
+        net.eval()
+        epoch_test_acc = batch_accuracy(test_loader, net, num_steps)
+        print(f"Epoch {epoch+1}, Test Acc: {epoch_test_acc * 100:.2f}%")
+
+        if epoch_test_acc > best_acc:
+            best_acc = epoch_test_acc
+            epochs_no_improve = 0
+            # Optionally save the best model:
+            # torch.save(net.state_dict(), "best_snn_model.pt")
+        else:
+            epochs_no_improve += 1
+            if epochs_no_improve >= patience:
+                print(f"Early stopping at epoch {epoch+1}")
+                break
+
     scheduler.step()
 
 # Plot Loss
@@ -158,5 +180,3 @@ plt.title("Test Set Accuracy")
 plt.xlabel("Epoch")
 plt.ylabel("Accuracy")
 plt.show()
-
-

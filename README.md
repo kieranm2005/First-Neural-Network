@@ -8,7 +8,9 @@ Keras-Initials.py - Neural network trained to identify handwritten letters A-Z.
 
 First-Pytorch-Network.py - Neural network built using Pytorch. Implementing the same as Keras-Initials.py
 
-## Spiking Neural Networks with SnnTorch - following tutorials
+## Spiking Neural Networks with SnnTorch 
+
+### Following tutorials
 
 Snntorch-Spike-Encoding.py - Following Tutorial 1 - Spike Encoding from the Snntorch docs
 
@@ -25,10 +27,10 @@ Convolutional-SNN.py - Following Tutorial 6 - ...from the Snntorch docs
 Tonic-Neuromorphic.py - Following Tutorial 7 - ...from the Snntorch docs
 
 
-## Snntorch Misc.
+### Snntorch Misc.
 
 CSNN-Expansion.py - Convolutional-SNN.py with a learning rate scheduler
 
-### Up Next
+## Up Next
 To do:
 - Add individual files based off of First-Neural-Network.py for XOR function, vertical/horizontal line classification
