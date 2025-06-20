@@ -5,8 +5,14 @@ destination_path.png
 spike_mnist_latency.mp4
 spike_bar.mp4
 /data
+/artifact
+/tmp
+/tf
+/__pycache__
 spike_bar2.mp4
 # Ignore Python cache files
 __pycache__/
 # Ignore tf and keras model files
 *.h5
+# Ignore sqlite database files
+*.sqlite3
