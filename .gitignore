@@ -4,3 +4,9 @@ spike_mnist_test_25.mp4
 destination_path.png
 spike_mnist_latency.mp4
 spike_bar.mp4
+/data
+spike_bar2.mp4
+# Ignore Python cache files
+__pycache__/
+# Ignore tf and keras model files
+*.h5
