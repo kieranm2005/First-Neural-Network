@@ -17,27 +17,6 @@ import itertools
 
 from torch.optim.lr_scheduler import StepLR # Learning rate scheduler
 
-# Function to visualize the network
-def visualize_network(net, num_steps, data):
-    mem_rec = []
-    spk_rec = []
-    utils.reset(net)  # resets hidden states for all LIF neurons in net
-
-    for step in range(num_steps):
-        spk_out, mem_out = net(data)
-        spk_rec.append(spk_out)
-        mem_rec.append(mem_out)
-
-    # Plot the spike and membrane potential
-    fig, axs = plt.subplots(2, 1, figsize=(10, 6))
-    axs[0].imshow(spk_rec[-1].cpu().numpy(), aspect='auto', cmap='gray')
-    axs[0].set_title('Spike Output')
-    axs[1].imshow(mem_rec[-1].cpu().numpy(), aspect='auto', cmap='hot')
-    axs[1].set_title('Membrane Potential')
-    plt.tight_layout()
-    plt.show()
-
-
 spike_grad = surrogate.fast_sigmoid(slope=25)
 beta = 0.5
 num_steps = 50
@@ -180,5 +159,4 @@ plt.xlabel("Epoch")
 plt.ylabel("Accuracy")
 plt.show()
 
-# Visualize the network
-visualize_network(net, num_steps, data)
+
