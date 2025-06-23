@@ -174,9 +174,28 @@ for epoch in range(num_epochs):
     scheduler.step()
 
 # Plot Loss
-fig = plt.figure(facecolor="w")
-plt.plot(test_acc_hist)
-plt.title("Test Set Accuracy")
-plt.xlabel("Epoch")
-plt.ylabel("Accuracy")
+# ...existing code...
+
+# Plot Training Loss and Test Accuracy
+fig, ax1 = plt.subplots(facecolor="w")
+
+color = 'tab:blue'
+ax1.set_xlabel('Iteration')
+ax1.set_ylabel('Training Loss', color=color)
+ax1.plot(loss_hist, color=color, label='Training Loss')
+ax1.tick_params(axis='y', labelcolor=color)
+ax1.legend(loc='upper right')
+
+ax2 = ax1.twinx()  # instantiate a second axes that shares the same x-axis
+
+color = 'tab:orange'
+# Calculate test accuracy x-axis positions (every 50 iterations)
+test_acc_x = list(range(0, counter, 50))
+ax2.set_ylabel('Test Accuracy', color=color)
+ax2.plot(test_acc_x, test_acc_hist, color=color, label='Test Accuracy')
+ax2.tick_params(axis='y', labelcolor=color)
+ax2.legend(loc='lower right')
+
+plt.title("Training Loss and Test Accuracy")
+fig.tight_layout()
 plt.show()
