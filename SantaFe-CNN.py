@@ -85,11 +85,18 @@ replay_buffer = deque(maxlen=50000)
 observation_shape = env.observation_space.shape  # (channels, height, width)
 num_actions = env.action_space.n
 model = SantaFeCNN(observation_shape, num_actions)
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+target_model = SantaFeCNN(observation_shape, num_actions)
+target_model.load_state_dict(model.state_dict())
+target_model.eval()
+target_update_freq = 1000  # steps
+
+# Define loss function and optimizer
 loss_fn = nn.MSELoss()
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 epsilon = epsilon_start
 
+step_count = 0
 for episode in range(num_episodes):
     obs, info = env.reset()
     obs = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # shape: (1, C, H, W)
@@ -129,13 +136,17 @@ for episode in range(num_episodes):
             q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
             # max_a' Q(s', a')
             with torch.no_grad():
-                next_q_values = model(next_obs_batch).max(1)[0]
+                next_q_values = target_model(next_obs_batch).max(1)[0]
             target = reward_batch + gamma * next_q_values * (1 - done_batch)
 
             loss = loss_fn(q_values, target)
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+
+        step_count += 1
+        if step_count % target_update_freq == 0:
+            target_model.load_state_dict(model.state_dict())
 
     # Decay epsilon
     epsilon = max(epsilon_end, epsilon * epsilon_decay)
