@@ -65,7 +65,7 @@ gym.register(
         id="gymnasium_env/SantaFeTrail-v0",
         entry_point="SantaFeTrailEnv:SantaFeTrailEnv",  # module:class
         reward_threshold=89,        
-        max_episode_steps=400       
+        max_episode_steps=600     
 )
 
 # Initializing environment
@@ -79,7 +79,7 @@ epsilon_start = 1.0
 epsilon_end = 0.1
 epsilon_decay = 0.995
 learning_rate = 1e-3
-replay_buffer = deque(maxlen=10000)
+replay_buffer = deque(maxlen=50000)
 
 # Model and optimizer
 observation_shape = env.observation_space.shape  # (channels, height, width)
