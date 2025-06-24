@@ -6,6 +6,11 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from collections import deque
+'''To Do:
+1. Vectorized Environment: Use `gym.vector.make` for parallel environments.
+2. Collect statistics: Use `env.get_episode_stats()` to collect statistics.
+3. Plotting: Use `matplotlib` to visualize the training progress.
+4. Tune hyperparameters with Optuna'''
 
 class SantaFeCNN(nn.Module):
     def __init__(self, observation_shape, num_actions):
@@ -55,7 +60,7 @@ class SantaFeCNN(nn.Module):
         # Apply Fully Connected -> ReLU
         x = F.relu(self.fc1(x))
         
-        # Output layer (no activation here, typically done later for logits)
+        # Output layer 
         actions_logits = self.fc2(x)
         return actions_logits
 
@@ -69,7 +74,7 @@ gym.register(
 )
 
 # Initializing environment
-env = gym.make("gymnasium_env/SantaFeTrail-v0")
+env = gym.make_vec("gymnasium_env/SantaFeTrail-v0", num_envs=5)
 
 # Hyperparameters
 num_episodes = 500
