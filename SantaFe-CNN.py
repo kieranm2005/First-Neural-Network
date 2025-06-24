@@ -102,6 +102,8 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 epsilon = epsilon_start
 
+episode_stats = []  # Add this before your training loop
+
 step_count = 0
 for episode in range(num_episodes):
     obs, info = env.reset()
@@ -162,4 +164,16 @@ for episode in range(num_episodes):
     epsilon = max(epsilon_end, epsilon * epsilon_decay)
     print(f"Episode {episode+1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}")
 
+    # Store stats for this episode
+    episode_stats.append({
+        "episode": episode + 1,
+        "total_reward": total_reward,
+        "epsilon": epsilon
+    })
+
 env.close()
+
+# Optionally, save to file after training:
+import json
+with open("episode_stats.json", "w") as f:
+    json.dump(episode_stats, f)
