@@ -85,6 +85,7 @@ epsilon_end = 0.1
 epsilon_decay = 0.995
 learning_rate = 1e-3
 replay_buffer = deque(maxlen=50000)
+recent_buffer = deque(maxlen=5000)  # smaller buffer for recent transitions
 
 # Model and optimizer
 observation_shape = env.observation_space.shape  # (channels, height, width)
@@ -124,12 +125,16 @@ for episode in range(num_episodes):
 
         # Store transition in replay buffer
         replay_buffer.append((obs, action, reward, next_obs_tensor, done))
+        recent_buffer.append((obs, action, reward, next_obs_tensor, done))
 
         obs = next_obs_tensor
 
         # Sample random minibatch and train
         if len(replay_buffer) >= batch_size:
-            batch = random.sample(replay_buffer, batch_size)
+            if len(recent_buffer) >= batch_size // 2:
+                batch = random.sample(replay_buffer, batch_size // 2) + random.sample(recent_buffer, batch_size // 2)
+            else:
+                batch = random.sample(replay_buffer, batch_size)
             obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
             obs_batch = torch.cat(obs_batch)
             action_batch = torch.tensor(action_batch)
