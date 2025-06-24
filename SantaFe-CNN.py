@@ -74,7 +74,7 @@ gym.register(
 )
 
 # Initializing environment
-env = gym.make_vec("gymnasium_env/SantaFeTrail-v0", num_envs=5)
+env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
 # Hyperparameters
 num_episodes = 500
