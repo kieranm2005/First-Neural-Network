@@ -37,3 +37,4 @@ Located in the `SantaFeTrail-Snntorch/src/` directory and root:
 
 To do:
 - Add individual files based off of `First-Neural-Network.py` for XOR function, vertical/horizontal line classification
+- Add more frequent comments 
