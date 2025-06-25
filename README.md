@@ -1,4 +1,4 @@
-# First Neural Networks
+## First Neural Networks
 
 First-Neural-Network.py - Neural network built in python not using any ML libraries like Keras, Pytorch etc. Following Tariq Rashid's book Make Your Own Neural Network.
 
@@ -8,9 +8,9 @@ Keras-Initials.py - Neural network trained to identify handwritten letters A-Z.
 
 First-Pytorch-Network.py - Neural network built using Pytorch. Implementing the same as Keras-Initials.py
 
-## Spiking Neural Networks with SnnTorch 
+## Santa Fe Trail CNN
 
-### Following tutorials
+### Snntorch Tutorials
 
 Snntorch-Spike-Encoding.py - Following Tutorial 1 - Spike Encoding from the Snntorch docs
 
@@ -27,9 +27,6 @@ Convolutional-SNN.py - Following Tutorial 6 - ...from the Snntorch docs
 Tonic-Neuromorphic.py - Following Tutorial 7 - ...from the Snntorch docs
 
 
-### Snntorch Misc.
-
-CSNN-Expansion.py - Convolutional-SNN.py with a learning rate scheduler
 
 ## Up Next
 To do:

@@ -20,3 +20,4 @@ __pycache__/
 /SantaFeTrail-Snntorch/src/README.md
 /SantaFeTrail-Snntorch/src/requirements.txt
 best_snn_model.pt
+/SantaFeTrail-CNN/episode_stats.json

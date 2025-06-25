@@ -122,68 +122,69 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 obs = obs[0]
             obs_flat = np.array(obs).flatten()
             
-            # Update statistics during training (moved here)
             state_mean = 0.99 * state_mean + 0.01 * torch.tensor(obs_flat).float().mean()
-            state_std = 0.99 * state_std + 0.01 * torch.tensor(obs_flat).float().std()
+            state_std  = 0.99 * state_std  + 0.01 * torch.tensor(obs_flat).float().std()
             
-            # Normalize the state before using it
             obs_tensor = normalize_state(obs_flat).to(device).unsqueeze(0)
             if random.random() < epsilon:
-                action = env.action_space.sample()
+                action = env.action_space.sample()  # pure random exploration
             else:
                 with torch.no_grad():
                     action_logits = model(obs_tensor)
                     action = torch.argmax(action_logits, dim=1).item()
 
-            next_obs, reward, terminated, truncated, info = env.step(action)
-            done = terminated or truncated
-            total_reward += reward
+        next_obs, reward, terminated, truncated, info = env.step(action)
+        done = terminated or truncated
+        total_reward += reward
 
-            if isinstance(next_obs, tuple):
-                next_obs = next_obs[0]
-            next_obs_flat = np.array(next_obs).flatten()
+        # Always store transitions in replay_buffer, alongside prioritized_replay
+        replay_buffer.append((obs_flat, action, reward, np.array(next_obs).flatten(), done))
 
-            # Calculate priority (example: based on TD error)
+        if isinstance(next_obs, tuple):
+            next_obs = next_obs[0]
+        next_obs_flat = np.array(next_obs).flatten()
+
+        # TD error priority
+        with torch.no_grad():
+            obs_tensor = torch.tensor([obs_flat], dtype=torch.float32, device=device)
+            next_obs_tensor = torch.tensor([next_obs_flat], dtype=torch.float32, device=device)
+            q_value = model(obs_tensor).gather(1, torch.tensor([[action]], device=device)).squeeze()
+            next_q_values = target_model(next_obs_tensor).max(1)[0]
+            target = torch.tensor(reward, dtype=torch.float32, device=device) + gamma * next_q_values * (1 - torch.tensor(done, dtype=torch.float32, device=device))
+            td_error = torch.abs(q_value - target).item()
+        
+        prioritized_replay.add((obs_flat, action, reward, next_obs_flat, done), priority=td_error) # Add experience with calculated priority
+
+        obs = next_obs
+
+        if len(replay_buffer) >= batch_size:
+            #batch = random.sample(replay_buffer, batch_size)
+            batch, indices = prioritized_replay.sample(batch_size) # Sample from Prioritized Replay buffer
+            obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
+            obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32, device=device)
+            action_batch = torch.tensor(action_batch, device=device)
+            reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
+            next_obs_batch = torch.tensor(np.array(next_obs_batch), dtype=torch.float32, device=device)
+            done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device)
+
+            q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
             with torch.no_grad():
-                obs_tensor = torch.tensor(np.array([obs_flat]), dtype=torch.float32, device=device)
-                next_obs_tensor = torch.tensor(np.array([next_obs_flat]), dtype=torch.float32, device=device)
-                q_value = model(obs_tensor).gather(1, torch.tensor([[action]], device=device)).squeeze()
-                next_q_values = target_model(next_obs_tensor).max(1)[0]
-                target = torch.tensor(reward, dtype=torch.float32, device=device) + gamma * next_q_values * (1 - torch.tensor(done, dtype=torch.float32, device=device))
-                td_error = torch.abs(q_value - target).item()
-            
-            prioritized_replay.add((obs_flat, action, reward, next_obs_flat, done), priority=td_error) # Add experience with calculated priority
+                next_actions = model(next_obs_batch).argmax(1)
+                next_q_values = target_model(next_obs_batch).gather(1, next_actions.unsqueeze(1)).squeeze(1)
+            target = reward_batch + gamma * next_q_values * (1 - done_batch)
 
-            obs = next_obs
+            loss = nn.MSELoss()(q_values, target)
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            scheduler.step()  # <-- Move here, right after optimizer.step()
 
-            if len(replay_buffer) >= batch_size:
-                #batch = random.sample(replay_buffer, batch_size)
-                batch, indices = prioritized_replay.sample(batch_size) # Sample from Prioritized Replay buffer
-                obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
-                obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32, device=device)
-                action_batch = torch.tensor(action_batch, device=device)
-                reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
-                next_obs_batch = torch.tensor(np.array(next_obs_batch), dtype=torch.float32, device=device)
-                done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device)
-
-                q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
-                with torch.no_grad():
-                    next_actions = model(next_obs_batch).argmax(1)
-                    next_q_values = target_model(next_obs_batch).gather(1, next_actions.unsqueeze(1)).squeeze(1)
-                target = reward_batch + gamma * next_q_values * (1 - done_batch)
-
-                loss = nn.MSELoss()(q_values, target)
-                optimizer.zero_grad()
-                loss.backward()
-                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                optimizer.step()
-                scheduler.step()  # <-- Move here, right after optimizer.step()
-
-                # Update priorities in the prioritized replay buffer (example: proportional prioritization)
-                with torch.no_grad():
-                    td_errors = torch.abs(q_values - target).cpu().numpy()
-                for idx, error in zip(indices, td_errors):
-                    prioritized_replay.priorities[idx] = error
+            # Update priorities in the prioritized replay buffer (example: proportional prioritization)
+            with torch.no_grad():
+                td_errors = torch.abs(q_values - target).cpu().numpy()
+            for idx, error in zip(indices, td_errors):
+                prioritized_replay.priorities[idx] = error
 
         if step_counter % target_update_freq == 0:
             target_model.load_state_dict(model.state_dict())
@@ -221,7 +222,7 @@ if __name__ == "__main__":
         id="gymnasium_env/SantaFeTrail-v0",
         entry_point="SantaFeTrailEnv:SantaFeTrailEnv",  # module:class
         reward_threshold=89,        
-        max_episode_steps=100     
+        max_episode_steps=600      # Increased from 100 to allow more moves
 )
 
     # Initializing environment
