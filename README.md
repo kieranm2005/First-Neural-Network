@@ -10,7 +10,7 @@ First-Pytorch-Network.py - Neural network built using Pytorch. Implementing the 
 
 ## Santa Fe Trail CNN
 
-### Snntorch Tutorials
+## Snntorch Tutorials
 
 Snntorch-Spike-Encoding.py - Following Tutorial 1 - Spike Encoding from the Snntorch docs
 
