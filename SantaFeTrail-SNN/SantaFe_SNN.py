@@ -44,6 +44,8 @@ class PrioritizedReplay:
         self.priorities = []
         
     def add(self, experience, priority):
+        min_priority = 1e-6
+        priority = max(priority, min_priority)
         if len(self.buffer) >= self.capacity:
             self.buffer.pop(0)
             self.priorities.pop(0)
@@ -51,7 +53,13 @@ class PrioritizedReplay:
         self.priorities.append(priority)
         
     def sample(self, batch_size):
-        probs = np.array(self.priorities) / sum(self.priorities)
+        priorities = np.array(self.priorities, dtype=np.float64)
+        total = priorities.sum()
+        if total == 0 or np.isnan(total) or np.isinf(total):
+            # fallback to uniform sampling
+            probs = np.ones(len(self.buffer)) / len(self.buffer)
+        else:
+            probs = priorities / total
         indices = np.random.choice(len(self.buffer), batch_size, p=probs)
         samples = [self.buffer[idx] for idx in indices]
         return samples, indices

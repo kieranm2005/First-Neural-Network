@@ -23,6 +23,11 @@ json_rewards_sub = json_rewards[::subsample_rate]
 plt.figure(figsize=(12, 6))
 plt.plot(plotter_episodes_sub, plotter_rewards_sub, label="Default hyperparameters", alpha=0.7)
 plt.plot(json_episodes_sub, json_rewards_sub, label="Tuned hyperparameters", alpha=0.7)
+# Line at 89 on the y-axis
+plt.axhline(y=89, color='r', linestyle='--', label="Target Reward (89)")
+plt.ylim(0, 150)  # Set y-axis limits for better visibility
+plt.xlim(0, max(max(plotter_episodes_sub), max(json_episodes_sub)))  # Set x-axis limits based on the maximum episode number
+plt.grid()
 plt.xlabel("Episode")
 plt.ylabel("Total Reward")
 plt.title("Total Reward per Episode: Untuned vs Tuned Hyperparameters (Subsampled)")
