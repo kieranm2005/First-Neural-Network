@@ -14,27 +14,53 @@ class SNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_steps=25):
         super(SNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.hidden = snn.Leaky(beta=0.5)
-        self.fc2 = nn.Linear(hidden_size, output_size)
+        self.hidden1 = snn.Leaky(beta=0.5)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.hidden2 = snn.Leaky(beta=0.5)
+        self.fc3 = nn.Linear(hidden_size, output_size)
         self.num_steps = num_steps
 
     def forward(self, x):
-        # x: [batch, input_size]
         batch_size = x.shape[0]
-        mem = torch.zeros((batch_size, self.fc1.out_features), device=x.device)
-        spk_sum = torch.zeros((batch_size, self.fc1.out_features), device=x.device)
+        mem1 = torch.zeros((batch_size, self.fc1.out_features), device=x.device)
+        mem2 = torch.zeros((batch_size, self.fc2.out_features), device=x.device)
+        spk_sum1 = torch.zeros_like(mem1)
+        spk_sum2 = torch.zeros_like(mem2)
+        
         for _ in range(self.num_steps):
-            cur = self.fc1(x)
-            spk, mem = self.hidden(cur, mem)
-            spk_sum += spk
-        out = self.fc2(spk_sum / self.num_steps)  # mean spike count
+            cur1 = self.fc1(x)
+            spk1, mem1 = self.hidden1(cur1, mem1)
+            cur2 = self.fc2(spk1)
+            spk2, mem2 = self.hidden2(cur2, mem2)
+            spk_sum2 += spk2
+            
+        out = self.fc3(spk_sum2 / self.num_steps)
         return out
 
-def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0.99, epsilon_start=1.0, epsilon_end=0.1, epsilon_decay=0.995, num_steps=25):
+class PrioritizedReplay:
+    def __init__(self, capacity):
+        self.capacity = capacity
+        self.buffer = []
+        self.priorities = []
+        
+    def add(self, experience, priority):
+        if len(self.buffer) >= self.capacity:
+            self.buffer.pop(0)
+            self.priorities.pop(0)
+        self.buffer.append(experience)
+        self.priorities.append(priority)
+        
+    def sample(self, batch_size):
+        probs = np.array(self.priorities) / sum(self.priorities)
+        indices = np.random.choice(len(self.buffer), batch_size, p=probs)
+        samples = [self.buffer[idx] for idx in indices]
+        return samples, indices
+
+def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamma=0.99, epsilon_start=1.0, epsilon_end=0.05, epsilon_decay=0.997, num_steps=50):
     print("Training SNN on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
     input_size = np.prod(obs_shape)
-    hidden_size = 128
+    hidden_size = 256                     # Larger hidden layer
     output_size = env.action_space.n
 
     model = SNN(input_size, hidden_size, output_size, num_steps=num_steps).to(device)
@@ -46,6 +72,7 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
     epsilon = epsilon_start
     target_update_freq = 1000  # Update target network every 1000 steps
     step_counter = 0
+    prioritized_replay = PrioritizedReplay(capacity=50000) # Add Prioritized Replay buffer
 
     # Add learning rate scheduler
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
@@ -69,6 +96,22 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
         state_tensor = torch.FloatTensor(state)
         return (state_tensor - state_mean) / (state_std + 1e-8)
     
+    def get_action(state, epsilon):
+        if random.random() > epsilon:
+            with torch.no_grad():
+                q_values = model(state)
+                if random.random() < 0.3:  # Add occasional noise even during exploitation
+                    noise = torch.randn_like(q_values) * 0.1
+                    q_values += noise
+                return q_values.argmax().item()
+        # During exploration, use a mix of random and directed exploration
+        if random.random() < 0.5:
+            return env.action_space.sample()
+        else:
+            # Try to move towards nearest food
+            return env.get_direction_to_nearest_food()
+
+    # Training loop
     for episode in range(num_episodes):
         obs, info = env.reset()
         total_reward = 0
@@ -99,17 +142,23 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
             if isinstance(next_obs, tuple):
                 next_obs = next_obs[0]
             next_obs_flat = np.array(next_obs).flatten()
-            replay_buffer.append((obs_flat, action, reward, next_obs_flat, done))
-            recent_buffer.append((obs_flat, action, reward, next_obs_flat, done))  # Add to recent buffer
+
+            # Calculate priority (example: based on TD error)
+            with torch.no_grad():
+                obs_tensor = torch.tensor(np.array([obs_flat]), dtype=torch.float32, device=device)
+                next_obs_tensor = torch.tensor(np.array([next_obs_flat]), dtype=torch.float32, device=device)
+                q_value = model(obs_tensor).gather(1, torch.tensor([[action]], device=device)).squeeze()
+                next_q_values = target_model(next_obs_tensor).max(1)[0]
+                target = torch.tensor(reward, dtype=torch.float32, device=device) + gamma * next_q_values * (1 - torch.tensor(done, dtype=torch.float32, device=device))
+                td_error = torch.abs(q_value - target).item()
+            
+            prioritized_replay.add((obs_flat, action, reward, next_obs_flat, done), priority=td_error) # Add experience with calculated priority
+
             obs = next_obs
 
             if len(replay_buffer) >= batch_size:
-                if len(recent_buffer) >= batch_size // 2:
-                    # Sample half from recent experiences
-                    batch = (random.sample(replay_buffer, batch_size // 2) + 
-                            random.sample(recent_buffer, batch_size // 2))
-                else:
-                    batch = random.sample(replay_buffer, batch_size)
+                #batch = random.sample(replay_buffer, batch_size)
+                batch, indices = prioritized_replay.sample(batch_size) # Sample from Prioritized Replay buffer
                 obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
                 obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32, device=device)
                 action_batch = torch.tensor(action_batch, device=device)
@@ -119,7 +168,6 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
 
                 q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
                 with torch.no_grad():
-                    # Double DQN: Use online network to select action, target network to evaluate
                     next_actions = model(next_obs_batch).argmax(1)
                     next_q_values = target_model(next_obs_batch).gather(1, next_actions.unsqueeze(1)).squeeze(1)
                 target = reward_batch + gamma * next_q_values * (1 - done_batch)
@@ -127,11 +175,15 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
                 loss = nn.MSELoss()(q_values, target)
                 optimizer.zero_grad()
                 loss.backward()
-                
-                # Add gradient clipping
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                
                 optimizer.step()
+                scheduler.step()  # <-- Move here, right after optimizer.step()
+
+                # Update priorities in the prioritized replay buffer (example: proportional prioritization)
+                with torch.no_grad():
+                    td_errors = torch.abs(q_values - target).cpu().numpy()
+                for idx, error in zip(indices, td_errors):
+                    prioritized_replay.priorities[idx] = error
 
         if step_counter % target_update_freq == 0:
             target_model.load_state_dict(model.state_dict())
@@ -146,9 +198,6 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
             best_reward = total_reward
         print(f"Episode {episode + 1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}, Best Reward: {best_reward}")
         
-        # Step the scheduler
-        scheduler.step()
-
         # Early stopping check
         avg_reward = np.mean(episode_rewards[-100:])
         if avg_reward > best_reward_early_stopping:
