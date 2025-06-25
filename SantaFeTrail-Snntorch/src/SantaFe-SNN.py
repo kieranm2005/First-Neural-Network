@@ -69,10 +69,6 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
         state_tensor = torch.FloatTensor(state)
         return (state_tensor - state_mean) / (state_std + 1e-8)
     
-    # Update statistics during training
-    state_mean = 0.99 * state_mean + 0.01 * obs_flat.mean()
-    state_std = 0.99 * state_std + 0.01 * obs_flat.std()
-
     for episode in range(num_episodes):
         obs, info = env.reset()
         total_reward = 0
@@ -82,7 +78,13 @@ def train_snn(env, num_episodes=500, batch_size=64, learning_rate=0.001, gamma=0
             if isinstance(obs, tuple):
                 obs = obs[0]
             obs_flat = np.array(obs).flatten()
-            obs_tensor = torch.tensor(obs_flat, dtype=torch.float32, device=device).unsqueeze(0)
+            
+            # Update statistics during training (moved here)
+            state_mean = 0.99 * state_mean + 0.01 * torch.tensor(obs_flat).float().mean()
+            state_std = 0.99 * state_std + 0.01 * torch.tensor(obs_flat).float().std()
+            
+            # Normalize the state before using it
+            obs_tensor = normalize_state(obs_flat).to(device).unsqueeze(0)
             if random.random() < epsilon:
                 action = env.action_space.sample()
             else:

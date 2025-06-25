@@ -19,3 +19,4 @@ __pycache__/
 /SantaFeTrail-Snntorch/src/SantaFeTrailEnv.py
 /SantaFeTrail-Snntorch/src/README.md
 /SantaFeTrail-Snntorch/src/requirements.txt
+best_snn_model.pt
