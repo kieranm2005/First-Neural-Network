@@ -16,3 +16,6 @@ __pycache__/
 *.h5
 # Ignore sqlite database files
 *.sqlite3
+/SantaFeTrail-Snntorch/src/SantaFeTrailEnv.py
+/SantaFeTrail-Snntorch/src/README.md
+/SantaFeTrail-Snntorch/src/requirements.txt

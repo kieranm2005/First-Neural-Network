@@ -78,12 +78,12 @@ env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
 # Hyperparameters
 num_episodes = 500
-batch_size = 32
-gamma = 0.99
+batch_size = 64
+gamma = 0.9006346496123904 # Via optuna
 epsilon_start = 1.0
 epsilon_end = 0.1
-epsilon_decay = 0.995
-learning_rate = 1e-3
+epsilon_decay = 0.9910256339861461 # Via optuna
+learning_rate = 0.0011779172637528985 # Via optuna
 replay_buffer = deque(maxlen=50000)
 recent_buffer = deque(maxlen=5000)  # smaller buffer for recent transitions
 
