@@ -543,3 +543,15 @@ best_episodes = sorted(zip(episodes, total_rewards, epsilons), key=lambda x: x[1
 print("Best 10 Episodes based on Total Reward:")
 for episode, reward, epsilon in best_episodes:
     print(f"Episode {episode}, Total Reward: {reward}, Epsilon: {epsilon:.3f}")
+
+def get_rewards():
+    """Return the list of total rewards for all episodes (for import by other scripts)."""
+    return total_rewards
+
+def get_episodes():
+    """Return the list of episode numbers."""
+    return episodes
+
+def get_epsilons():
+    """Return the list of epsilon values."""
+    return epsilons
