@@ -239,6 +239,20 @@ if __name__ == "__main__":
     # Initialize environment
     env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
+    # Before training, collect N random states and compute mean/std
+    random_states = []
+    obs, info = env.reset()
+    for _ in range(1000):
+        action = env.action_space.sample()
+        next_obs, _, terminated, truncated, _ = env.step(action)
+        random_states.append(np.array(obs).flatten())
+        obs = next_obs
+        if terminated or truncated:
+            obs, info = env.reset()
+    random_states = np.stack(random_states)
+    state_mean = torch.tensor(random_states.mean(axis=0), device=device)
+    state_std = torch.tensor(random_states.std(axis=0) + 1e-8, device=device)
+
     # Train the SNN agent
     episode_rewards, episode_epsilons = train_snn(env)
 
