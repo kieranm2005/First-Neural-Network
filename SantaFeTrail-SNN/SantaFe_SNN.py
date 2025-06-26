@@ -8,35 +8,57 @@ from collections import deque
 import random
 from SantaFeTrailEnv import SantaFeTrailEnv  
 
+# Summary of architecture:
+# - Input layer: 16 input neurons (4x4 grid)
+# - Hidden layer 1: 256 leaky spiking neurons
+# - Hidden layer 2: 256 leaky spiking neurons
+# - Output layer: 4 output neurons (up, down, left, right)
+
+# Summary of training:
+# - Environment: Santa Fe Trail 32x32 grid
+# - Training episodes: 1000
+# - Batch size: 128
+# - Learning rate: 0.0003
+# - Discount factor (gamma): 0.99
+# - Reinforcement learning algorithm: DQN
+# - Epsilon-greedy exploration strategy with decay
+# - Prioritized experience replay buffer with capacity 50000
+# - Early stopping based on running average reward
+
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# Spiking Neural Network definition
 class SNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_steps=25):
         super(SNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.hidden1 = snn.Leaky(beta=0.5)
+        self.hidden1 = snn.Leaky(beta=0.5)  # Leaky spiking neuron layer
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.hidden2 = snn.Leaky(beta=0.5)
         self.fc3 = nn.Linear(hidden_size, output_size)
-        self.num_steps = num_steps
+        self.num_steps = num_steps  # Number of time steps for SNN simulation
 
     def forward(self, x):
         batch_size = x.shape[0]
+        # Initialize membrane potentials and spike accumulators
         mem1 = torch.zeros((batch_size, self.fc1.out_features), device=x.device)
         mem2 = torch.zeros((batch_size, self.fc2.out_features), device=x.device)
         spk_sum1 = torch.zeros_like(mem1)
         spk_sum2 = torch.zeros_like(mem2)
         
+        # Simulate SNN over multiple time steps
         for _ in range(self.num_steps):
             cur1 = self.fc1(x)
             spk1, mem1 = self.hidden1(cur1, mem1)
             cur2 = self.fc2(spk1)
             spk2, mem2 = self.hidden2(cur2, mem2)
-            spk_sum2 += spk2
-            
+            spk_sum2 += spk2  # Accumulate spikes
+        
+        # Average spikes and pass through final layer
         out = self.fc3(spk_sum2 / self.num_steps)
         return out
 
+# Prioritized Experience Replay Buffer
 class PrioritizedReplay:
     def __init__(self, capacity):
         self.capacity = capacity
@@ -45,7 +67,7 @@ class PrioritizedReplay:
         
     def add(self, experience, priority):
         min_priority = 1e-6
-        priority = max(priority, min_priority)
+        priority = max(priority, min_priority)  # Avoid zero priorities
         if len(self.buffer) >= self.capacity:
             self.buffer.pop(0)
             self.priorities.pop(0)
@@ -56,7 +78,7 @@ class PrioritizedReplay:
         priorities = np.array(self.priorities, dtype=np.float64)
         total = priorities.sum()
         if total == 0 or np.isnan(total) or np.isinf(total):
-            # fallback to uniform sampling
+            # fallback to uniform sampling if priorities are invalid
             probs = np.ones(len(self.buffer)) / len(self.buffer)
         else:
             probs = priorities / total
@@ -64,6 +86,7 @@ class PrioritizedReplay:
         samples = [self.buffer[idx] for idx in indices]
         return samples, indices
 
+# Main training loop for SNN agent
 def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamma=0.99, epsilon_start=1.0, epsilon_end=0.05, epsilon_decay=0.997, num_steps=50):
     print("Training SNN on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
@@ -71,32 +94,33 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     hidden_size = 256                     # Larger hidden layer
     output_size = env.action_space.n
 
+    # Initialize main and target SNN models
     model = SNN(input_size, hidden_size, output_size, num_steps=num_steps).to(device)
     target_model = SNN(input_size, hidden_size, output_size, num_steps=num_steps).to(device)
     target_model.load_state_dict(model.state_dict())
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     replay_buffer = deque(maxlen=50000)
-    recent_buffer = deque(maxlen=5000)  # Add recent experience buffer for more frequent sampling of recent transitions
+   # recent_buffer = deque(maxlen=5000)  # Buffer for recent transitions (not used in this code)
     epsilon = epsilon_start
     target_update_freq = 1000  # Update target network every 1000 steps
     step_counter = 0
-    prioritized_replay = PrioritizedReplay(capacity=50000) # Add Prioritized Replay buffer
+    prioritized_replay = PrioritizedReplay(capacity=50000) # Prioritized Replay buffer
 
-    # Add learning rate scheduler
+    # Learning rate scheduler for gradual decay
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
     
-    # Track metrics
+    # Track metrics for monitoring
     running_reward = deque(maxlen=100)
     best_reward = float('-inf')
 
     episode_rewards = []
     episode_epsilons = []
 
-    patience = 50
+    patience = 50  # Early stopping patience
     no_improve = 0
     best_reward_early_stopping = float('-inf')
 
-    # Add running state normalization
+    # Running state normalization statistics
     state_mean = torch.zeros(input_size)
     state_std = torch.ones(input_size)
     
@@ -104,6 +128,7 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
         state_tensor = torch.FloatTensor(state)
         return (state_tensor - state_mean) / (state_std + 1e-8)
     
+    # Epsilon-greedy action selection with some noise
     def get_action(state, epsilon):
         if random.random() > epsilon:
             with torch.no_grad():
@@ -119,13 +144,13 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
             # Try to move towards nearest food
             return env.get_direction_to_nearest_food()
 
-    # Training loop
+    # Training loop over episodes
     for episode in range(num_episodes):
         obs, info = env.reset()
         total_reward = 0
         done = False
 
-        # Reset state normalization for each episode (optional, or keep running stats)
+        # Optionally reset state normalization for each episode
         # state_mean = torch.zeros(input_size)
         # state_std = torch.ones(input_size)
 
@@ -134,7 +159,7 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 obs = obs[0]
             obs_flat = np.array(obs).flatten()
 
-            # Update running mean and std for normalization
+            # Update running mean and std for normalization (exponential moving average)
             state_mean = 0.99 * state_mean + 0.01 * torch.tensor(obs_flat).float()
             state_std = 0.99 * state_std + 0.01 * (torch.tensor(obs_flat).float() - state_mean) ** 2
 
@@ -150,14 +175,14 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
             done = terminated or truncated
             total_reward += reward
 
-            # Always store transitions in replay_buffer, alongside prioritized_replay
+            # Store transition in replay buffer and prioritized replay
             replay_buffer.append((obs_flat, action, reward, np.array(next_obs).flatten(), done))
 
             if isinstance(next_obs, tuple):
                 next_obs = next_obs[0]
             next_obs_flat = np.array(next_obs).flatten()
 
-            # TD error priority
+            # Calculate TD error for prioritization
             with torch.no_grad():
                 obs_tensor = torch.tensor([obs_flat], dtype=torch.float32, device=device)
                 next_obs_tensor = torch.tensor([next_obs_flat], dtype=torch.float32, device=device)
@@ -167,9 +192,9 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 td_error = torch.abs(q_value - target).item()
             prioritized_replay.add((obs_flat, action, reward, next_obs_flat, done), priority=td_error)
 
-            obs = next_obs  # Update obs for next step
+            obs = next_obs  # Move to next state
 
-            # Learning step every step if enough samples
+            # Learning step if enough samples in buffer
             if len(replay_buffer) >= batch_size:
                 batch, indices = prioritized_replay.sample(batch_size)
                 obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
@@ -179,12 +204,14 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 next_obs_batch = torch.tensor(np.array(next_obs_batch), dtype=torch.float32, device=device)
                 done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device)
 
+                # Compute Q-values and targets
                 q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
                 with torch.no_grad():
                     next_actions = model(next_obs_batch).argmax(1)
                     next_q_values = target_model(next_obs_batch).gather(1, next_actions.unsqueeze(1)).squeeze(1)
                 target = reward_batch + gamma * next_q_values * (1 - done_batch)
 
+                # Compute loss and update model
                 loss = nn.MSELoss()(q_values, target)
                 optimizer.zero_grad()
                 loss.backward()
@@ -198,10 +225,12 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 for idx, error in zip(indices, td_errors):
                     prioritized_replay.priorities[idx] = error
 
+            # Periodically update target network
             if step_counter % target_update_freq == 0:
                 target_model.load_state_dict(model.state_dict())
             step_counter += 1
 
+        # Decay epsilon after each episode
         epsilon = max(epsilon_end, epsilon * epsilon_decay)
         episode_rewards.append(total_reward)
         episode_epsilons.append(epsilon)
@@ -210,7 +239,7 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
             best_reward = total_reward
         print(f"Episode {episode + 1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}, Best Reward: {best_reward}")
 
-        # Early stopping check
+        # Early stopping based on running average reward
         avg_reward = np.mean(episode_rewards[-100:])
         if avg_reward > best_reward_early_stopping:
             best_reward_early_stopping = avg_reward
@@ -227,17 +256,16 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     return episode_rewards, episode_epsilons
 
 if __name__ == "__main__":
-    # Registering custom environment
+    # Register custom Santa Fe Trail environment with Gymnasium
     gym.register(
         id="gymnasium_env/SantaFeTrail-v0",
         entry_point="SantaFeTrailEnv:SantaFeTrailEnv",  # module:class
         reward_threshold=89,        
         max_episode_steps=600      # Increased from 100 to allow more moves
-)
+    )
 
-    # Initializing environment
+    # Initialize environment
     env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
-
-    # Training the SNN
+    # Train the SNN agent
     train_snn(env)
