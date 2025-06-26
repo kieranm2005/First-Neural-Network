@@ -8,7 +8,7 @@ import random
 from collections import deque
 '''To Do:
 1. Vectorized Environment: Use `gym.vector.make` for parallel environments.
-2. Collect statistics: Use `env.get_episode_stats_v2()` to collect statistics.
+2. Collect statistics: Use `env.get_episode_stats()` to collect statistics.
 3. Plotting: Use `matplotlib` to visualize the training progress.
 4. Tune hyperparameters with Optuna'''
 
@@ -77,7 +77,7 @@ gym.register(
 env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
 # Hyperparameters
-num_episodes = 2000
+num_episodes = 500
 batch_size = 64
 gamma = 0.9006346496123904 # Via optuna
 epsilon_start = 1.0
@@ -87,42 +87,32 @@ learning_rate = 0.0011779172637528985 # Via optuna
 replay_buffer = deque(maxlen=50000)
 recent_buffer = deque(maxlen=5000)  # smaller buffer for recent transitions
 
+# Set device
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 # Model and optimizer
 observation_shape = env.observation_space.shape  # (channels, height, width)
 num_actions = env.action_space.n
-model = SantaFeCNN(observation_shape, num_actions)
-target_model = SantaFeCNN(observation_shape, num_actions)
+model = SantaFeCNN(observation_shape, num_actions).to(device)
+target_model = SantaFeCNN(observation_shape, num_actions).to(device)
 target_model.load_state_dict(model.state_dict())
 target_model.eval()
-target_update_freq = 500  # steps
+target_update_freq = 1000  # steps
 
 # Define loss function and optimizer
 loss_fn = nn.MSELoss()
-optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-4)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_episodes)
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
 epsilon = epsilon_start
 
-episode_stats_v2 = []  # Add this before your training loop
+episode_stats = []  # Add this before your training loop
 
 step_count = 0
 for episode in range(num_episodes):
     obs, info = env.reset()
-    obs = torch.tensor(obs, dtype=torch.float32).unsqueeze(0)  # shape: (1, C, H, W)
+    obs = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)  # shape: (1, C, H, W)
     done = False
     total_reward = 0
-
-    # Add before training loop
-    obs_running_mean = np.zeros(observation_shape)
-    obs_running_var = np.ones(observation_shape)
-    obs_count = 1e-4
-
-    def normalize_obs(obs):
-        global obs_running_mean, obs_running_var, obs_count
-        obs_running_mean = 0.99 * obs_running_mean + 0.01 * obs
-        obs_running_var = 0.99 * obs_running_var + 0.01 * (obs - obs_running_mean) ** 2
-        obs_count += 1
-        return (obs - obs_running_mean) / (np.sqrt(obs_running_var) + 1e-8)
 
     while not done:
         # Epsilon-greedy action selection
@@ -135,12 +125,8 @@ for episode in range(num_episodes):
 
         next_obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        next_obs_tensor = torch.tensor(next_obs, dtype=torch.float32).unsqueeze(0)
+        next_obs_tensor = torch.tensor(next_obs, dtype=torch.float32, device=device).unsqueeze(0)
         total_reward += reward
-
-        # Normalize observations
-        obs = normalize_obs(obs)
-        next_obs = normalize_obs(next_obs)
 
         # Store transition in replay buffer
         replay_buffer.append((obs, action, reward, next_obs_tensor, done))
@@ -154,13 +140,16 @@ for episode in range(num_episodes):
                 batch = random.sample(replay_buffer, batch_size // 2) + random.sample(recent_buffer, batch_size // 2)
             else:
                 batch = random.sample(replay_buffer, batch_size)
-            obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
-            obs_batch = torch.cat(obs_batch)
-            action_batch = torch.tensor(action_batch)
-            reward_batch = torch.tensor(reward_batch, dtype=torch.float32)
-            next_obs_batch = torch.cat(next_obs_batch)
-            done_batch = torch.tensor(done_batch, dtype=torch.float32)
 
+            obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
+            obs_batch = torch.cat([o.to(device) for o in obs_batch])
+            action_batch = torch.tensor(action_batch, dtype=torch.long, device=device)
+            reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
+            next_obs_batch = torch.cat([no.to(device) for no in next_obs_batch])
+            # Ensure done_batch is 1.0 for terminal, 0.0 for non-terminal
+            done_batch = torch.tensor([float(d) for d in done_batch], dtype=torch.float32, device=device)
+            # Ensure done_batch is 1.0 for terminal, 0.0 for non-terminal
+            done_batch = torch.tensor([float(d) for d in done_batch], dtype=torch.float32, device=device)
             # Q(s, a)
             q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
             # max_a' Q(s', a')
@@ -172,26 +161,28 @@ for episode in range(num_episodes):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            scheduler.step()  # <-- Add scheduler step here
 
         step_count += 1
         if step_count % target_update_freq == 0:
             target_model.load_state_dict(model.state_dict())
 
-    # Decay epsilon
-    epsilon = max(epsilon_end, epsilon * epsilon_decay)
+        # Decay epsilon per step for more granular control
+        epsilon = max(epsilon_end, epsilon * epsilon_decay)
+
     print(f"Episode {episode+1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}")
 
     # Store stats for this episode
-    episode_stats_v2.append({
+    episode_stats.append({
         "episode": episode + 1,
         "total_reward": total_reward,
         "epsilon": epsilon
     })
-
 env.close()
 
 # Optionally, save to file after training:
 import json
-with open("episode_stats_v2.json", "w") as f:
-    json.dump(episode_stats_v2, f)
+import datetime
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+filename = f"episode_stats_{timestamp}.json"
+with open(filename, "w") as f:
+    json.dump(episode_stats, f)
