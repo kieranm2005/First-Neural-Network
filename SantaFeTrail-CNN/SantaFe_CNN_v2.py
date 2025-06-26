@@ -14,6 +14,27 @@ from collections import deque
 
 class SantaFeCNN(nn.Module):
     def __init__(self, observation_shape, num_actions):
+        """
+        Initializes the SantaFeCNN neural network architecture.
+
+        Args:
+            observation_shape (tuple): Shape of the input observation as (channels, height, width).
+            num_actions (int): Number of possible actions (output size).
+
+        Architecture:
+            - 3 convolutional layers with ReLU activations, each followed by max pooling:
+                * Conv1: 6 -> 32 channels, 3x3 kernel, stride 1, padding 1, MaxPool 2x2
+                * Conv2: 32 -> 64 channels, 3x3 kernel, stride 1, padding 1, MaxPool 2x2
+                * Conv3: 64 -> 128 channels, 3x3 kernel, stride 1, padding 1, MaxPool 2x2
+            - Feature maps are flattened after convolutions and pooling.
+            - 2 fully connected layers:
+                * fc1: Hidden layer with 512 units
+                * fc2: Output layer with num_actions units
+
+        Notes:
+            - The spatial dimensions are reduced by a factor of 8 due to three pooling layers.
+            - The network is designed for input images of shape (channels, 32, 32) by default, but adapts to other sizes.
+        """
         super(SantaFeCNN, self).__init__()
         # observation_shape is (channels, height, width), e.g., (6, 32, 32)
         channels, height, width = observation_shape
@@ -100,12 +121,12 @@ target_model.eval()
 target_update_freq = 1000  # steps
 
 # Define loss function and optimizer
-loss_fn = nn.MSELoss()
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+loss_fn = nn.MSELoss() # Mean Squared Error Loss
+optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate) # Using Adam optimizer for better convergence
 
 epsilon = epsilon_start
 
-episode_stats = []  # Add this before your training loop
+episode_stats = []
 
 step_count = 0
 for episode in range(num_episodes):

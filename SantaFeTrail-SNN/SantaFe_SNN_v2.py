@@ -10,31 +10,20 @@ from SantaFeTrailEnv import SantaFeTrailEnv
 
 # Summary of architecture:
 # - Input layer: 16 input neurons (4x4 grid)
-# - Hidden layer 1: 32 leaky spiking neurons
-# - Hidden layer 2: 32 leaky spiking neurons
+# - Hidden layer 1: 32 RLeaky spiking neurons
+# - Hidden layer 2: 32 RLeaky spiking neurons
 # - Output layer: 4 output neurons (up, down, left, right)
-
-# Summary of training:
-# - Environment: Santa Fe Trail 32x32 grid
-# - Training episodes: 1000
-# - Batch size: 128
-# - Learning rate: 0.0003
-# - Discount factor (gamma): 0.99
-# - Reinforcement learning algorithm: DQN
-# - Epsilon-greedy exploration strategy with decay
-# - Prioritized experience replay buffer with capacity 50000
-# - Early stopping based on running average reward
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Spiking Neural Network definition
+# Spiking Neural Network definition using RLeaky neurons
 class SNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_steps=25):
         super(SNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.hidden1 = snn.Leaky(beta=0.5)  # Leaky spiking neuron layer
+        self.hidden1 = snn.RLeaky(beta=0.5, linear_features=hidden_size)  # Specify linear_features
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.hidden2 = snn.Leaky(beta=0.5)
+        self.hidden2 = snn.RLeaky(beta=0.5, linear_features=hidden_size)  # Specify linear_features
         self.fc3 = nn.Linear(hidden_size, output_size)
         self.num_steps = num_steps  # Number of time steps for SNN simulation
 
@@ -86,8 +75,9 @@ class PrioritizedReplay:
         return samples, indices
 
 # Main training loop for SNN agent
+
 def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamma=0.99, epsilon_start=1.0, epsilon_end=0.05, epsilon_decay=0.997, num_steps=50):
-    print("Training SNN on Santa Fe Trail environment...")
+    print("Training SNN (RLeaky) on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
     input_size = np.prod(obs_shape)
     hidden_size = 20         # Larger hidden layer
@@ -99,7 +89,6 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     target_model.load_state_dict(model.state_dict())
     optimizer = optim.Adam(model.parameters(), lr=learning_rate)
     replay_buffer = deque(maxlen=50000)
-   # recent_buffer = deque(maxlen=5000)  # Buffer for recent transitions (not used in this code)
     epsilon = epsilon_start
     target_update_freq = 1000  # Update target network every 1000 steps
     step_counter = 0
@@ -144,10 +133,6 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
         total_reward = 0
         done = False
 
-        # Optionally reset state normalization for each episode
-        # state_mean = torch.zeros(input_size)
-        # state_std = torch.ones(input_size)
-
         while not done:
             if isinstance(obs, tuple):
                 obs = obs[0]
@@ -163,10 +148,6 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
             next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             total_reward += reward
-
-            # Store transition in replay buffer and prioritized replay
-            # Store transition in prioritized replay
-            # replay_buffer.append((obs_flat, action, reward, np.array(next_obs).flatten(), done))
 
             if isinstance(next_obs, tuple):
                 next_obs = next_obs[0]
@@ -184,7 +165,6 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
 
             obs = next_obs  # Move to next state
 
-            # Learning step if enough samples in buffer
             # Learning step if enough samples in buffer
             if len(prioritized_replay.buffer) >= batch_size:
                 batch, indices = prioritized_replay.sample(batch_size)
