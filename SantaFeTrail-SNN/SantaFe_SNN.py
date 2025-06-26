@@ -198,10 +198,12 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
             if len(replay_buffer) >= batch_size:
                 batch, indices = prioritized_replay.sample(batch_size)
                 obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
-                obs_batch = torch.tensor(np.array(obs_batch), dtype=torch.float32, device=device)
+                obs_batch = np.stack(obs_batch)  # Ensures a proper 2D array
+                obs_batch = torch.tensor(obs_batch, dtype=torch.float32, device=device)
                 action_batch = torch.tensor(action_batch, device=device)
                 reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
-                next_obs_batch = torch.tensor(np.array(next_obs_batch), dtype=torch.float32, device=device)
+                next_obs_batch = np.stack(next_obs_batch)
+                next_obs_batch = torch.tensor(next_obs_batch, dtype=torch.float32, device=device)
                 done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device)
 
                 # Compute Q-values and targets
