@@ -80,7 +80,7 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     print("Training SNN (RLeaky) on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
     input_size = np.prod(obs_shape)
-    hidden_size = 20         # Larger hidden layer
+    hidden_size = 64         # Larger hidden layer
     output_size = env.action_space.n
 
     # Initialize main and target SNN models
