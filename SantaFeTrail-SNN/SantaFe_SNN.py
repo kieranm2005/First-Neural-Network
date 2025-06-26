@@ -43,7 +43,6 @@ class SNN(nn.Module):
         # Initialize membrane potentials and spike accumulators
         mem1 = torch.zeros((batch_size, self.fc1.out_features), device=x.device)
         mem2 = torch.zeros((batch_size, self.fc2.out_features), device=x.device)
-        spk_sum1 = torch.zeros_like(mem1)
         spk_sum2 = torch.zeros_like(mem2)
         
         # Simulate SNN over multiple time steps
@@ -105,7 +104,6 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     target_update_freq = 1000  # Update target network every 1000 steps
     step_counter = 0
     prioritized_replay = PrioritizedReplay(capacity=50000) # Prioritized Replay buffer
-
     # Learning rate scheduler for gradual decay
     scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=100, gamma=0.5)
     
@@ -120,12 +118,12 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     no_improve = 0
     best_reward_early_stopping = float('-inf')
 
-    # Running state normalization statistics
-    state_mean = torch.zeros(input_size)
-    state_std = torch.ones(input_size)
+    # Running state normalization statistics (persist across episodes, on device)
+    state_mean = torch.zeros(input_size, device=device)
+    state_std = torch.ones(input_size, device=device)
     
     def normalize_state(state):
-        state_tensor = torch.FloatTensor(state)
+        state_tensor = torch.FloatTensor(state).to(device)
         return (state_tensor - state_mean) / (state_std + 1e-8)
     
     # Epsilon-greedy action selection with some noise
@@ -159,24 +157,20 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 obs = obs[0]
             obs_flat = np.array(obs).flatten()
 
-            # Update running mean and std for normalization (exponential moving average)
-            state_mean = 0.99 * state_mean + 0.01 * torch.tensor(obs_flat).float()
-            state_std = 0.99 * state_std + 0.01 * (torch.tensor(obs_flat).float() - state_mean) ** 2
-
+            # Update running mean and std for normalization (exponential moving average, in-place)
+            obs_flat_tensor = torch.tensor(obs_flat, dtype=torch.float32, device=device)
+            state_mean.copy_(0.99 * state_mean + 0.01 * obs_flat_tensor)
+            state_std.copy_(0.99 * state_std + 0.01 * (obs_flat_tensor - state_mean) ** 2)
             obs_tensor = normalize_state(obs_flat).to(device).unsqueeze(0)
-            if random.random() < epsilon:
-                action = env.action_space.sample()  # pure random exploration
-            else:
-                with torch.no_grad():
-                    action_logits = model(obs_tensor)
-                    action = torch.argmax(action_logits, dim=1).item()
+            action = get_action(obs_tensor, epsilon)
 
             next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
             total_reward += reward
 
             # Store transition in replay buffer and prioritized replay
-            replay_buffer.append((obs_flat, action, reward, np.array(next_obs).flatten(), done))
+            # Store transition in prioritized replay
+            # replay_buffer.append((obs_flat, action, reward, np.array(next_obs).flatten(), done))
 
             if isinstance(next_obs, tuple):
                 next_obs = next_obs[0]
@@ -195,7 +189,8 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
             obs = next_obs  # Move to next state
 
             # Learning step if enough samples in buffer
-            if len(replay_buffer) >= batch_size:
+            # Learning step if enough samples in buffer
+            if len(prioritized_replay.buffer) >= batch_size:
                 batch, indices = prioritized_replay.sample(batch_size)
                 obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
                 obs_batch = np.stack(obs_batch)  # Ensures a proper 2D array
@@ -219,28 +214,27 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 optimizer.step()
-                scheduler.step()
 
                 # Update priorities in the prioritized replay buffer
                 with torch.no_grad():
                     td_errors = torch.abs(q_values - target).cpu().numpy()
                 for idx, error in zip(indices, td_errors):
                     prioritized_replay.priorities[idx] = error
-
             # Periodically update target network
             if step_counter % target_update_freq == 0:
                 target_model.load_state_dict(model.state_dict())
             step_counter += 1
 
-        # Decay epsilon after each episode
-        epsilon = max(epsilon_end, epsilon * epsilon_decay)
+            # Periodically update target network (skip first step)
+            if step_counter != 0 and step_counter % target_update_freq == 0:
+                target_model.load_state_dict(model.state_dict())
+            step_counter += 1
         episode_rewards.append(total_reward)
         episode_epsilons.append(epsilon)
         running_reward.append(total_reward)
         if total_reward > best_reward:
             best_reward = total_reward
         print(f"Episode {episode + 1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}, Best Reward: {best_reward}")
-
         # Early stopping based on running average reward
         avg_reward = np.mean(episode_rewards[-100:])
         if avg_reward > best_reward_early_stopping:
@@ -270,4 +264,25 @@ if __name__ == "__main__":
     env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
     # Train the SNN agent
-    train_snn(env)
+    episode_rewards, episode_epsilons = train_snn(env)
+
+    # Save results to file
+    np.save("episode_rewards.npy", episode_rewards)
+    np.save("episode_epsilons.npy", episode_epsilons)
+
+    # Plot results
+    import matplotlib.pyplot as plt
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(episode_rewards)
+    plt.title("Episode Rewards")
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.subplot(1, 2, 2)
+    plt.plot(episode_epsilons)
+    plt.title("Epsilon Decay")
+    plt.xlabel("Episode")
+    plt.ylabel("Epsilon")
+    plt.tight_layout()
+    plt.savefig("training_results.png")
+    plt.show()
