@@ -10,8 +10,8 @@ from SantaFeTrailEnv import SantaFeTrailEnv
 
 # Summary of architecture:
 # - Input layer: 16 input neurons (4x4 grid)
-# - Hidden layer 1: 256 leaky spiking neurons
-# - Hidden layer 2: 256 leaky spiking neurons
+# - Hidden layer 1: 32 leaky spiking neurons
+# - Hidden layer 2: 32 leaky spiking neurons
 # - Output layer: 4 output neurons (up, down, left, right)
 
 # Summary of training:
@@ -91,7 +91,7 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     print("Training SNN on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
     input_size = np.prod(obs_shape)
-    hidden_size = 256                     # Larger hidden layer
+    hidden_size = 32         # Larger hidden layer
     output_size = env.action_space.n
 
     # Initialize main and target SNN models
