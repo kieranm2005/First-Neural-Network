@@ -92,4 +92,64 @@ class SantaFeTrailSNNTrainer:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         
     def train(self):
+        epsilon = self.epsilon_start
+        for episode in range(self.num_episodes):
+            state, _ = self.env.reset()
+            mem_hist = None
+            done = False
+            while not done:
+                # Epsilon-greedy action
+                if random.random() < epsilon:
+                    action = self.env.action_space.sample()
+                else:
+                    state_t = torch.FloatTensor(state).view(1, -1).to(self.device)  # Flatten input
+                    with torch.no_grad():
+                        spk2, _ = self.model(state_t, mem_hist)
+                        action = torch.argmax(spk2, dim=1).item()
+                next_state, reward, done, _, _ = self.env.step(action)
+                
+                self.replay_buffer.append((state, action, reward, next_state, done))
+                state = next_state
+                
+                if len(self.replay_buffer) >= self.batch_size:
+                    self.update_model()
+                    print(f"Episode {episode + 1}/{self.num_episodes}, Action: {action}, Reward: {reward}, Epsilon: {epsilon:.2f}")
+            
+            epsilon = max(self.epsilon_end, epsilon * self.epsilon_decay)
+
+    def update_model(self):
+        batch = random.sample(self.replay_buffer, self.batch_size)
+        states, actions, rewards, next_states, dones = zip(*batch)
         
+        states = torch.FloatTensor(states).view(self.batch_size, -1).to(self.device)      # Flatten input
+        actions = torch.LongTensor(actions).unsqueeze(1).to(self.device)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        next_states = torch.FloatTensor(next_states).view(self.batch_size, -1).to(self.device)  # Flatten input
+        dones = torch.FloatTensor(dones).to(self.device)
+        
+        spk2, _ = self.model(states)
+        q_values = spk2.gather(1, actions)
+        
+        with torch.no_grad():
+            next_spk2, _ = self.model(next_states)
+            max_next_q_values, _ = next_spk2.max(dim=1, keepdim=True)
+            target_q_values = rewards.unsqueeze(1) + self.gamma * max_next_q_values * (1 - dones.unsqueeze(1))
+        
+        td_error = target_q_values - q_values
+        
+        self.optimizer.zero_grad()
+        loss = (td_error.pow(2)).mean()
+        loss.backward()
+        self.optimizer.step()
+
+# Run the training
+if __name__ == "__main__":
+    observation_shape = (1, 16)  # Example shape, adjust as needed
+    num_actions = 4  # Example number of actions, adjust as needed
+    
+    model = SantaFeTrailSNN(observation_shape, num_actions)
+    trainer = SantaFeTrailSNNTrainer(model, model.register_initialize_env())
+    
+    trainer.train()
+    
+    print("Training completed.")
