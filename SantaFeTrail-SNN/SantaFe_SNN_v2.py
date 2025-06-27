@@ -17,6 +17,11 @@ from SantaFeTrailEnv import SantaFeTrailEnv  # Import custom environment
 # Set device to GPU if available, else CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+if device == torch.device("cuda"):
+    print("Using GPU for training.")
+else:
+    print("Using CPU for training.")
+
 # Spiking Neural Network definition using RLeaky neurons
 class SNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_steps=25):
