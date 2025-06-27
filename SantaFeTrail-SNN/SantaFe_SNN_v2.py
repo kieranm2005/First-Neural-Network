@@ -46,6 +46,31 @@ class SNN(nn.Module):
         out = self.fc3(spk_sum2 / self.num_steps)
         return out
 
+# Policy Network for REINFORCE (outputs action probabilities)
+class PolicySNN(nn.Module):
+    def __init__(self, input_size, hidden_size, output_size, num_steps=25):
+        super(PolicySNN, self).__init__()
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.hidden1 = snn.RLeaky(beta=0.5, linear_features=hidden_size)
+        self.fc2 = nn.Linear(hidden_size, hidden_size)
+        self.hidden2 = snn.RLeaky(beta=0.5, linear_features=hidden_size)
+        self.fc3 = nn.Linear(hidden_size, output_size)
+        self.num_steps = num_steps
+
+    def forward(self, x):
+        batch_size = x.shape[0]
+        mem1 = torch.zeros((batch_size, self.fc1.out_features), device=x.device)
+        mem2 = torch.zeros((batch_size, self.fc2.out_features), device=x.device)
+        spk_sum2 = torch.zeros_like(mem2)
+        for _ in range(self.num_steps):
+            cur1 = self.fc1(x)
+            spk1, mem1 = self.hidden1(cur1, mem1)
+            cur2 = self.fc2(spk1)
+            spk2, mem2 = self.hidden2(cur2, mem2)
+            spk_sum2 += spk2
+        out = self.fc3(spk_sum2 / self.num_steps)
+        return torch.softmax(out, dim=-1)  # Output action probabilities
+
 # Prioritized Experience Replay Buffer
 class PrioritizedReplay:
     def __init__(self, capacity):
@@ -227,6 +252,68 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     env.close()
     return episode_rewards, episode_epsilons
 
+# REINFORCE training loop
+def train_reinforce(env, num_episodes=1000, learning_rate=0.0003, gamma=0.99, num_steps=25):
+    print("Training SNN (RLeaky) with REINFORCE on Santa Fe Trail environment...")
+    obs_shape = env.observation_space.shape
+    input_size = np.prod(obs_shape)
+    hidden_size = 64
+    output_size = env.action_space.n
+
+    policy = PolicySNN(input_size, hidden_size, output_size, num_steps=num_steps).to(device)
+    optimizer = optim.Adam(policy.parameters(), lr=learning_rate)
+
+    episode_rewards = []
+    episode_epsilons = []  # Not used in REINFORCE, but kept for plotting
+
+    for episode in range(num_episodes):
+        obs, info = env.reset()
+        done = False
+        log_probs = []
+        rewards = []
+        total_reward = 0
+
+        while not done:
+            obs_flat = np.array(obs).flatten()
+            obs_tensor = torch.FloatTensor(obs_flat).to(device).unsqueeze(0)
+            probs = policy(obs_tensor)
+            dist = torch.distributions.Categorical(probs)
+            action = dist.sample()
+            log_prob = dist.log_prob(action)
+            next_obs, reward, terminated, truncated, info = env.step(action.item())
+            done = terminated or truncated
+
+            log_probs.append(log_prob)
+            rewards.append(reward)
+            total_reward += reward
+            obs = next_obs
+
+        # Compute returns
+        returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + gamma * G
+            returns.insert(0, G)
+        returns = torch.tensor(returns, dtype=torch.float32, device=device)
+        returns = (returns - returns.mean()) / (returns.std() + 1e-8)  # Normalize
+
+        # Policy loss
+        loss = -torch.stack(log_probs) * returns
+        loss = loss.sum()
+
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        episode_rewards.append(total_reward)
+        episode_epsilons.append(0)  # No epsilon in REINFORCE
+
+        print(f"Episode {episode + 1}, Total Reward: {total_reward}")
+
+    print("Training complete.")
+    env.close()
+    return episode_rewards, episode_epsilons
+
 if __name__ == "__main__":
     # Register custom Santa Fe Trail environment with Gymnasium
     gym.register(
@@ -275,4 +362,27 @@ if __name__ == "__main__":
     plt.ylabel("Epsilon")
     plt.tight_layout()
     plt.savefig("training_results.png")
+    plt.show()
+
+    # Train the SNN agent with REINFORCE
+    episode_rewards_reinforce, episode_epsilons_reinforce = train_reinforce(env)
+
+    # Save REINFORCE results to file
+    np.save("episode_rewards_reinforce.npy", episode_rewards_reinforce)
+    np.save("episode_epsilons_reinforce.npy", episode_epsilons_reinforce)
+
+    # Plot REINFORCE results
+    plt.figure(figsize=(12, 5))
+    plt.subplot(1, 2, 1)
+    plt.plot(episode_rewards_reinforce)
+    plt.title("REINFORCE Episode Rewards")
+    plt.xlabel("Episode")
+    plt.ylabel("Reward")
+    plt.subplot(1, 2, 2)
+    plt.plot(episode_epsilons_reinforce)
+    plt.title("REINFORCE Epsilon Decay")
+    plt.xlabel("Episode")
+    plt.ylabel("Epsilon")
+    plt.tight_layout()
+    plt.savefig("reinforce_training_results.png")
     plt.show()
