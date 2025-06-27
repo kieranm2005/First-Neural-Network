@@ -6,7 +6,7 @@ import gymnasium as gym
 import numpy as np
 from collections import deque
 import random
-from SantaFeTrailEnv import SantaFeTrailEnv  
+from SantaFeTrailEnv import SantaFeTrailEnv  # Import custom environment
 
 # Summary of architecture:
 # - Input layer: 16 input neurons (4x4 grid)
@@ -14,6 +14,7 @@ from SantaFeTrailEnv import SantaFeTrailEnv
 # - Hidden layer 2: 32 RLeaky spiking neurons
 # - Output layer: 4 output neurons (up, down, left, right)
 
+# Set device to GPU if available, else CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # Spiking Neural Network definition using RLeaky neurons
@@ -21,10 +22,10 @@ class SNN(nn.Module):
     def __init__(self, input_size, hidden_size, output_size, num_steps=25):
         super(SNN, self).__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.hidden1 = snn.RLeaky(beta=0.5, linear_features=hidden_size)  # Specify linear_features
+        self.hidden1 = snn.RLeaky(beta=0.5, linear_features=hidden_size)  # First spiking hidden layer
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.hidden2 = snn.RLeaky(beta=0.5, linear_features=hidden_size)  # Specify linear_features
-        self.fc3 = nn.Linear(hidden_size, output_size)
+        self.hidden2 = snn.RLeaky(beta=0.5, linear_features=hidden_size)  # Second spiking hidden layer
+        self.fc3 = nn.Linear(hidden_size, output_size)  # Output layer
         self.num_steps = num_steps  # Number of time steps for SNN simulation
 
     def forward(self, x):
@@ -71,7 +72,7 @@ class PolicySNN(nn.Module):
         out = self.fc3(spk_sum2 / self.num_steps)
         return torch.softmax(out, dim=-1)  # Output action probabilities
 
-# Prioritized Experience Replay Buffer
+# Prioritized Experience Replay Buffer for DQN
 class PrioritizedReplay:
     def __init__(self, capacity):
         self.capacity = capacity
@@ -99,9 +100,9 @@ class PrioritizedReplay:
         samples = [self.buffer[idx] for idx in indices]
         return samples, indices
 
-# Main training loop for SNN agent
+# Main training loop for SNN agent using DQN
 
-def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamma=0.99, epsilon_start=1.0, epsilon_end=0.05, epsilon_decay=0.997, num_steps=50):
+def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamma=0.99, epsilon_start=1.0, epsilon_end=0.05, epsilon_decay=0.997, num_steps=50, state_mean=None, state_std=None):
     print("Training SNN (RLeaky) on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
     input_size = np.prod(obs_shape)
@@ -132,9 +133,11 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     no_improve = 0
     best_reward_early_stopping = float('-inf')
 
-    # Running state normalization statistics (persist across episodes, on device)
-    state_mean = torch.zeros(input_size, device=device)
-    state_std = torch.ones(input_size, device=device)
+    # Use provided state_mean and state_std, or initialize if not provided
+    if state_mean is None:
+        state_mean = torch.zeros(input_size, device=device)
+    if state_std is None:
+        state_std = torch.ones(input_size, device=device)
     
     def normalize_state(state):
         state_tensor = torch.FloatTensor(state).to(device)
@@ -165,8 +168,9 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
 
             # Update running mean and std for normalization (exponential moving average, in-place)
             obs_flat_tensor = torch.tensor(obs_flat, dtype=torch.float32, device=device)
+            prev_mean = state_mean.clone()
             state_mean.copy_(0.99 * state_mean + 0.01 * obs_flat_tensor)
-            state_std.copy_(0.99 * state_std + 0.01 * (obs_flat_tensor - state_mean) ** 2)
+            state_std.copy_(0.99 * state_std + 0.01 * (obs_flat_tensor - prev_mean) ** 2)
             obs_tensor = normalize_state(obs_flat).to(device).unsqueeze(0)
             action = get_action(obs_tensor, epsilon)
 
@@ -220,14 +224,10 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
                 with torch.no_grad():
                     td_errors = torch.abs(q_values - target).cpu().numpy()
                 for idx, error in zip(indices, td_errors):
-                    prioritized_replay.priorities[idx] = error
+                    prioritized_replay.priorities[idx] = error  # Update priority
+
             # Periodically update target network
             if step_counter % target_update_freq == 0:
-                target_model.load_state_dict(model.state_dict())
-            step_counter += 1
-
-            # Periodically update target network (skip first step)
-            if step_counter != 0 and step_counter % target_update_freq == 0:
                 target_model.load_state_dict(model.state_dict())
             step_counter += 1
         episode_rewards.append(total_reward)
@@ -257,7 +257,8 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
     return episode_rewards, episode_epsilons
 
 # REINFORCE training loop
-def train_reinforce(env, num_episodes=1000, learning_rate=0.0003, gamma=0.99, num_steps=25):
+# This function trains a policy network using the REINFORCE algorithm (policy gradient)
+def train_reinforce(env, num_episodes=1000, learning_rate=0.001, gamma=0.99, num_steps=25, entropy_weight=0.01):
     print("Training SNN (RLeaky) with REINFORCE on Santa Fe Trail environment...")
     obs_shape = env.observation_space.shape
     input_size = np.prod(obs_shape)
@@ -273,41 +274,65 @@ def train_reinforce(env, num_episodes=1000, learning_rate=0.0003, gamma=0.99, nu
     for episode in range(num_episodes):
         obs, info = env.reset()
         done = False
-        log_probs = []
+        states = []
+        actions = []
         rewards = []
         total_reward = 0
 
+        # Collect trajectory data for the episode
         while not done:
             obs_flat = np.array(obs).flatten()
+            states.append(obs_flat)
+            
             obs_tensor = torch.FloatTensor(obs_flat).to(device).unsqueeze(0)
-            probs = policy(obs_tensor)
-            dist = torch.distributions.Categorical(probs)
-            action = dist.sample()
-            log_prob = dist.log_prob(action)
-            next_obs, reward, terminated, truncated, info = env.step(action.item())
+            with torch.no_grad():  # Don't track gradients during sampling
+                probs = policy(obs_tensor)
+                dist = torch.distributions.Categorical(probs)
+                action = dist.sample().item()
+            
+            next_obs, reward, terminated, truncated, info = env.step(action)
             done = terminated or truncated
 
-            log_probs.append(log_prob)
+            actions.append(action)
             rewards.append(reward)
             total_reward += reward
             obs = next_obs
 
-        # Compute returns
+        # Compute returns (discounted sum of rewards)
         returns = []
         G = 0
         for r in reversed(rewards):
             G = r + gamma * G
             returns.insert(0, G)
-        returns = torch.tensor(returns, dtype=torch.float32, device=device)
-        returns = (returns - returns.mean()) / (returns.std() + 1e-8)  # Normalize
+            
+        # Convert to tensor and normalize
+        returns_tensor = torch.tensor(returns, dtype=torch.float32, device=device)
+        if len(returns) > 1:  # Only normalize if more than one return
+            returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
 
-        # Policy loss
-        loss = -torch.stack(log_probs) * returns
-        loss = loss.sum()
-
+        # Recalculate policy outputs and loss in a single computation graph
         optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        loss = 0
+        entropy_loss = 0
+        
+        for t, (state, action, ret) in enumerate(zip(states, actions, returns_tensor)):
+            state_tensor = torch.FloatTensor(state).to(device).unsqueeze(0)
+            probs = policy(state_tensor)
+            dist = torch.distributions.Categorical(probs)
+            action_tensor = torch.tensor(action, device=device)
+            log_prob = dist.log_prob(action_tensor)
+            loss += -log_prob * ret.item()  # Policy gradient loss
+            
+            # Add entropy term to encourage exploration
+            entropy = dist.entropy()
+            entropy_loss += -entropy
+    
+        # Add entropy regularization to the loss
+        total_loss = loss + entropy_weight * entropy_loss
+    
+        # Backward pass AND update weights
+        total_loss.backward()
+        optimizer.step()  # Update policy network
 
         episode_rewards.append(total_reward)
         episode_epsilons.append(0)  # No epsilon in REINFORCE
@@ -330,7 +355,7 @@ if __name__ == "__main__":
     # Initialize environment
     env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
-    # Before training, collect N random states and compute mean/std
+    # Before training, collect N random states and compute mean/std for normalization
     random_states = []
     obs, info = env.reset()
     for _ in range(1000):
@@ -344,31 +369,29 @@ if __name__ == "__main__":
     state_mean = torch.tensor(random_states.mean(axis=0), device=device)
     state_std = torch.tensor(random_states.std(axis=0) + 1e-8, device=device)
 
-    # Train the SNN agent
-    episode_rewards, episode_epsilons = train_snn(env)
+    # Train the SNN agent (DQN version is commented out)
+    # episode_rewards, episode_epsilons = train_snn(env, state_mean=state_mean, state_std=state_std)
 
-    # Save results to file
-    np.save("episode_rewards.npy", episode_rewards)
-    np.save("episode_epsilons.npy", episode_epsilons)
+    # Save results to file (DQN)
+    # np.save("episode_rewards.npy", episode_rewards)
+    # np.save("episode_epsilons.npy", episode_epsilons)
 
-    # Plot results
-    import matplotlib.pyplot as plt
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(episode_rewards)
-    plt.title("Episode Rewards")
-    plt.xlabel("Episode")
-    plt.ylabel("Reward")
-    plt.subplot(1, 2, 2)
-    plt.plot(episode_epsilons)
-    plt.title("Epsilon Decay")
-    plt.xlabel("Episode")
-    plt.ylabel("Epsilon")
-    plt.tight_layout()
-    plt.savefig("training_results.png")
-    plt.show()
-
-    # Train the SNN agent with REINFORCE
+    # Plot results (DQN)
+    # import matplotlib.pyplot as plt
+    # plt.figure(figsize=(12, 5))
+    # plt.subplot(1, 2, 1)
+    # plt.plot(episode_rewards)
+    # plt.title("Episode Rewards")
+    # plt.xlabel("Episode")
+    # plt.ylabel("Reward")
+    # plt.subplot(1, 2, 2)
+    # plt.plot(episode_epsilons)
+    # plt.title("Epsilon Decay")
+    # plt.xlabel("Episode")
+    # plt.ylabel("Epsilon")
+    # plt.tight_layout()
+    # plt.savefig("training_results.png")
+    # Only REINFORCE is run here; DQN training is commented out above to focus on policy gradient results.
     episode_rewards_reinforce, episode_epsilons_reinforce = train_reinforce(env)
 
     # Save REINFORCE results to file
@@ -376,6 +399,7 @@ if __name__ == "__main__":
     np.save("episode_epsilons_reinforce.npy", episode_epsilons_reinforce)
 
     # Plot REINFORCE results
+    import matplotlib.pyplot as plt
     plt.figure(figsize=(12, 5))
     plt.subplot(1, 2, 1)
     plt.plot(episode_rewards_reinforce)
