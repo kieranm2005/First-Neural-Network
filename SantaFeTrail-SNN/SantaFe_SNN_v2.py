@@ -236,6 +236,10 @@ def train_snn(env, num_episodes=1000, batch_size=128, learning_rate=0.0003, gamm
         if total_reward > best_reward:
             best_reward = total_reward
         print(f"Episode {episode + 1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}, Best Reward: {best_reward}")
+
+        # Decay epsilon here
+        epsilon = max(epsilon_end, epsilon * epsilon_decay)
+
         # Early stopping based on running average reward
         avg_reward = np.mean(episode_rewards[-100:])
         if avg_reward > best_reward_early_stopping:
