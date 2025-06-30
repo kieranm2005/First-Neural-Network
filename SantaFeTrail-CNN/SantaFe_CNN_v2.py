@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-import matplotlib.pyplot as plt
 import random
 from collections import deque
 '''To Do:
@@ -190,9 +189,7 @@ for episode in range(num_episodes):
         # Decay epsilon per step for more granular control
         epsilon = max(epsilon_end, epsilon * epsilon_decay)
 
-    print(f"Episode {episode+1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}")
-
-    # Store stats for this episode
+    print(f"Episode {episode+1} | Reward: {total_reward:.2f} | Epsilon: {epsilon:.3f}")
     episode_stats.append({
         "episode": episode + 1,
         "total_reward": total_reward,
@@ -200,10 +197,10 @@ for episode in range(num_episodes):
     })
 env.close()
 
-# Optionally, save to file after training:
-import json
-import datetime
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-filename = f"episode_stats_{timestamp}.json"
-with open(filename, "w") as f:
-    json.dump(episode_stats, f)
+def save_stats(stats):
+    import json, datetime
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"episode_stats_{timestamp}.json"
+    with open(filename, "w") as f:
+        json.dump(stats, f)
+save_stats(episode_stats)

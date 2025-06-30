@@ -6,7 +6,6 @@ import gymnasium as gym
 import numpy as np
 from collections import deque
 import random
-import matplotlib.pyplot as plt
 from SantaFeTrailEnv import SantaFeTrailEnv
 
 # Constants
@@ -152,7 +151,7 @@ class SNNTrainer:
         patience = 50
         no_improve = 0
         best_reward_early_stopping = float('-inf')
-
+        episode_stats = []
         for episode in range(num_episodes):
             obs, _ = self.env.reset()
             total_reward = 0
@@ -191,10 +190,13 @@ class SNNTrainer:
 
             episode_rewards.append(total_reward)
             episode_epsilons.append(epsilon)
+            episode_stats.append({
+                "episode": episode + 1,
+                "total_reward": total_reward,
+                "epsilon": epsilon
+            })
             epsilon = max(epsilon_end, epsilon * epsilon_decay)
             self.scheduler.step()
-
-            # Early stopping and best model saving 
             avg_reward = np.mean(episode_rewards[-100:])
             if avg_reward > best_reward_early_stopping:
                 best_reward_early_stopping = avg_reward
@@ -205,9 +207,9 @@ class SNNTrainer:
                 if no_improve >= patience:
                     print("Early stopping triggered")
                     break
+            print(f"Episode {episode+1} | Reward: {total_reward:.2f} | Epsilon: {epsilon:.3f}")
 
-            print(f"Episode {episode + 1}, Total Reward: {total_reward}, Epsilon: {epsilon:.3f}, Best Reward: {max(episode_rewards)}")
-
+        self.save_stats(episode_stats)
         return episode_rewards, episode_epsilons
 
     def _update_dqn(self, batch_size):
@@ -239,7 +241,7 @@ class SNNTrainer:
     def train_reinforce(self, num_episodes=1000, learning_rate=0.001, entropy_weight=0.01):
         print("Training SNN with REINFORCE...")
         episode_rewards = []
-
+        episode_stats = []
         for episode in range(num_episodes):
             obs, _ = self.env.reset()
             done = False
@@ -269,56 +271,22 @@ class SNNTrainer:
             # Compute returns and update policy
             self._update_reinforce(states, actions, rewards, entropy_weight)
             episode_rewards.append(total_reward)
-            print(f"Episode {episode + 1}, Total Reward: {total_reward}")
+            episode_stats.append({
+                "episode": episode + 1,
+                "total_reward": total_reward
+            })
+            print(f"Episode {episode+1} | Reward: {total_reward:.2f}")
 
+        self.save_stats(episode_stats)
         return episode_rewards, []
 
-    def _update_reinforce(self, states, actions, rewards, entropy_weight):
-        returns = []
-        G = 0
-        for r in reversed(rewards):
-            G = r + GAMMA * G
-            returns.insert(0, G)
-
-        returns_tensor = torch.tensor(returns, dtype=torch.float32, device=DEVICE)
-        if len(returns) > 1:
-            returns_tensor = (returns_tensor - returns_tensor.mean()) / (returns_tensor.std() + 1e-8)
-
-        self.optimizer.zero_grad()
-        total_loss = 0
-        entropy_loss = 0
-
-        for state, action, ret in zip(states, actions, returns_tensor):
-            state_tensor = torch.FloatTensor(state).to(DEVICE).unsqueeze(0)
-            probs = self.model(state_tensor)
-            dist = torch.distributions.Categorical(probs)
-            action_tensor = torch.tensor(action, device=DEVICE)
-            log_prob = dist.log_prob(action_tensor)
-            loss = -log_prob * ret.item()
-            entropy = dist.entropy()
-            entropy_loss += -entropy
-            total_loss += loss + entropy_weight * entropy_loss
-
-        total_loss.backward()
-        self.optimizer.step()
-
-def plot_results(episode_rewards, episode_epsilons, algorithm):
-    plt.figure(figsize=(12, 5))
-    plt.subplot(1, 2, 1)
-    plt.plot(episode_rewards)
-    plt.title(f"{algorithm} Episode Rewards")
-    plt.xlabel("Episode")
-    plt.ylabel("Reward")
-
-    plt.subplot(1, 2, 2)
-    plt.plot(episode_epsilons)
-    plt.title(f"{algorithm} Epsilon Decay")
-    plt.xlabel("Episode")
-    plt.ylabel("Epsilon")
-
-    plt.tight_layout()
-    plt.savefig(f"{algorithm}_training_results.png")
-    plt.show()
+    @staticmethod
+    def save_stats(stats):
+        import json, datetime
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"episode_stats_{timestamp}.json"
+        with open(filename, "w") as f:
+            json.dump(stats, f)
 
 def main():
     # Register and create environment
@@ -333,7 +301,6 @@ def main():
     # Train with REINFORCE
     trainer = SNNTrainer(env, algorithm='reinforce')
     episode_rewards, episode_epsilons = trainer.train_reinforce()
-    plot_results(episode_rewards, episode_epsilons, 'REINFORCE')
 
     # Save results
     np.save("episode_rewards_reinforce.npy", episode_rewards)
