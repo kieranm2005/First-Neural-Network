@@ -27,3 +27,7 @@ best_snn_model.pt
 /SantaFeTrail-SNN/training_results.png
 REINFORCE_training_results.png
 /SantaFeTrail-CNN/*.json
+*.json
+*.png
+*.mp4
+*.pickle
