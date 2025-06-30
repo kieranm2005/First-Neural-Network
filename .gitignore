@@ -25,3 +25,5 @@ best_snn_model.pt
 /SantaFeTrail-SNN/episode_epsilons.npy
 /SantaFeTrail-SNN/episode_rewards.npy
 /SantaFeTrail-SNN/training_results.png
+REINFORCE_training_results.png
+/SantaFeTrail-CNN/*.json

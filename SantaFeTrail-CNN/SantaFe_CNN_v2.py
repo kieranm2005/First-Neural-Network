@@ -89,16 +89,16 @@ class SantaFeCNN(nn.Module):
 # Registering custom environment
 gym.register(
         id="gymnasium_env/SantaFeTrail-v0",
-        entry_point="SantaFeTrailEnv:SantaFeTrailEnv",  # module:class
+        entry_point="SantaFeTrailEnv:SantaFeTrailEnv",  
         reward_threshold=89,        
-        max_episode_steps=600     
+        max_episode_steps=150     
 )
 
 # Initializing environment
 env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
 # Hyperparameters
-num_episodes = 500
+num_episodes = 5000
 batch_size = 64
 gamma = 0.9006346496123904 # Via optuna
 epsilon_start = 1.0

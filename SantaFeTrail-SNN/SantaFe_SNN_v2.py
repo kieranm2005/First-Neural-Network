@@ -135,7 +135,7 @@ class SNNTrainer:
             if random.random() > epsilon:
                 with torch.no_grad():
                     q_values = self.model(state)
-                    if random.random() < 0.3:  # Add occasional noise
+                    if random.random() < 0.3:  # occasional noise
                         q_values += torch.randn_like(q_values) * 0.1
                     return q_values.argmax().item()
             return self.env.action_space.sample()
@@ -194,7 +194,7 @@ class SNNTrainer:
             epsilon = max(epsilon_end, epsilon * epsilon_decay)
             self.scheduler.step()
 
-            # Early stopping and best model saving logic
+            # Early stopping and best model saving 
             avg_reward = np.mean(episode_rewards[-100:])
             if avg_reward > best_reward_early_stopping:
                 best_reward_early_stopping = avg_reward
