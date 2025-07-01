@@ -56,7 +56,7 @@ gym.register(
 env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
 # Hyperparameters
-num_episodes = 500
+num_episodes = 10000
 batch_size = 64
 gamma = 0.9006346496123904
 epsilon_start = 1.0
@@ -72,7 +72,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 # Model and optimizer
 observation_shape = env.observation_space.shape  # (channels, height, width)
 num_actions = env.action_space.n
-hidden_size = 256  # You can tune this
+hidden_size = 256 
 model = SantaFeRNN(observation_shape, hidden_size, num_actions).to(device)
 target_model = SantaFeRNN(observation_shape, hidden_size, num_actions).to(device)
 target_model.load_state_dict(model.state_dict())
@@ -89,7 +89,6 @@ step_count = 0
 episode_stats = []
 for episode in range(num_episodes):
     obs, info = env.reset()
-    # For RNN, you may want to stack frames for sequence input. Here, we use seq_len=1 for simplicity.
     obs = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)  # (1, 1, C, H, W)
     done = False
     total_reward = 0

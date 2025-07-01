@@ -97,7 +97,7 @@ gym.register(
 env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
 # Hyperparameters
-num_episodes = 5000
+num_episodes = 10000
 batch_size = 64
 gamma = 0.9006346496123904 # Via optuna
 epsilon_start = 1.0
