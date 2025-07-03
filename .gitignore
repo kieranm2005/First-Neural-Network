@@ -21,3 +21,5 @@ __pycache__/
 *.pickle
 *.npy
 *.txt
+/Hussein-NN
+*.csv
