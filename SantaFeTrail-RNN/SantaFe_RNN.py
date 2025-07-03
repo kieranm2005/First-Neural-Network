@@ -5,39 +5,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 import random
-from collections import deque #double ended queue for efficient appends and pops
+from collections import deque
 from torch.optim.lr_scheduler import StepLR
 import json
 import datetime
+import os
 
-'''Overview:
-1. Environment: Custom Santa Fe Trail environment using Gymnasium.
-2. Model: Long Short-Term Memory (LSTM) neural network for sequential decision making.
-3. Training: Reinforcement learning with prioritized experience replay.
-4. Video Recording: Record episodes for visualization.
-5. Hyperparameters: Tuned using Optuna for optimal performance.
-6. Tensor shape compatibility: The model expects a 1D observation space, e.g., (input_dim,).
-7. Observation: The observation is a single value indicating if there's food in front of the agent.'''
-
-# Long Short-Term Memory Architecture for Santa Fe Trail
-class SantaFeLSTM(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size):
-        super(SantaFeLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_size=input_size[0], hidden_size=hidden_size, batch_first=True)
-        self.fc_value = nn.Linear(hidden_size, 128)
-        self.fc_advantage = nn.Linear(hidden_size, 128)
-        self.value = nn.Linear(128, 1)
-        self.advantage = nn.Linear(128, output_size)
-
-    def forward(self, x):
-        x, _ = self.lstm(x)
-        x = x[:, -1, :]  # Last time step
-        value = F.relu(self.fc_value(x))
-        advantage = F.relu(self.fc_advantage(x))
-        value = self.value(value)
-        advantage = self.advantage(advantage)
-        q_values = value + (advantage - advantage.mean(dim=1, keepdim=True))
-        return q_values
+from rnn_model import SantaFeLSTM
+from replay_buffer import PrioritizedReplayBuffer
+from utils import save_stats, save_best_transitions, load_best_transitions, save_model, load_model
+from config import num_episodes, batch_size, gamma, epsilon_start, epsilon_end, epsilon_decay, learning_rate, replay_buffer_size, recent_buffer_size, hidden_size, target_update_freq, n_step
 
 # Registering custom environment
 gym.register(
@@ -58,16 +35,8 @@ env = RecordVideo(
     name_prefix="SantaFeLSTM"
 )
 
-# Hyperparameters
-num_episodes = 600
-batch_size = 64
-gamma = 0.9006346496123904
-epsilon_start = 1.0
-epsilon_end = 0.1
-epsilon_decay = 0.997
-learning_rate = 0.0011779172637528985
-replay_buffer = deque(maxlen=50000)
-recent_buffer = deque(maxlen=5000)
+replay_buffer = deque(maxlen=replay_buffer_size)
+recent_buffer = deque(maxlen=recent_buffer_size)
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -77,7 +46,6 @@ observation_shape = env.observation_space.shape
 if len(observation_shape) != 1:
     raise ValueError(f"Expected observation_space.shape to be 1D (e.g., (input_dim,)), got {observation_shape}")
 num_actions = env.action_space.n
-hidden_size = 256
 model = SantaFeLSTM(observation_shape, hidden_size, num_actions).to(device)
 target_model = SantaFeLSTM(observation_shape, hidden_size, num_actions).to(device)
 target_model.load_state_dict(model.state_dict())
@@ -88,85 +56,13 @@ optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.5)
 
 epsilon = epsilon_start
-target_update_freq = 1000
-
-# Prioritized Replay Buffer
-# Number of transitions to keep in the buffer: 50000
-# Transitions are tuples of (state, action, reward, next_state, done)
-# Alpha controls the prioritization of experiences (0 < alpha <= 1)
-# Beta controls the importance sampling correction (0 < beta <= 1)
-# Capacity is the maximum number of transitions to store
-class PrioritizedReplayBuffer:
-    def __init__(self, capacity, alpha=0.6, beta=0.4):
-        self.capacity = capacity
-        self.alpha = alpha
-        self.beta = beta
-        self.buffer = []
-        self.priorities = np.zeros(capacity, dtype=np.float32)
-        self.position = 0
-
-    def add(self, state, action, reward, next_state, done):
-        max_priority = self.priorities.max() if self.buffer else 1.0
-
-        if len(self.buffer) < self.capacity:
-            self.buffer.append((state, action, reward, next_state, done))
-        else:
-            self.buffer[self.position] = (state, action, reward, next_state, done)
-
-        self.priorities[self.position] = max_priority
-        self.position = (self.position + 1) % self.capacity
-
-    def sample(self, batch_size):
-        if len(self.buffer) < self.capacity:
-            probs = self.priorities[:len(self.buffer)]
-        else:
-            probs = self.priorities
-
-        probs = probs ** self.alpha
-        probs = probs / probs.sum()
-
-        indices = np.random.choice(len(self.buffer), batch_size, p=probs)
-        samples = [self.buffer[idx] for idx in indices]
-
-        weights = (len(self.buffer) * probs[indices]) ** -self.beta
-        weights = weights / weights.max()
-
-        return samples, indices, weights
-
-    def update_priorities(self, indices, priorities):
-        for idx, priority in zip(indices, priorities):
-            self.priorities[idx] = priority
-
-# Initialize Prioritized Replay Buffer
-prioritized_replay_buffer = PrioritizedReplayBuffer(capacity=50000)
-
-def load_model(model, optimizer, filename="santa_fe_lstm.pt"):
-    # Load the model and optimizer state
-    try:
-        checkpoint = torch.load(filename)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        episode_stats = checkpoint['episode_stats']
-        epsilon = checkpoint['epsilon']
-        print(f"Loaded model from {filename} with {len(episode_stats)} episodes")
-        return True, episode_stats, epsilon
-    except FileNotFoundError:
-        print(f"No previous model found at {filename}, starting fresh")
-        return False, [], epsilon_start
+prioritized_replay_buffer = PrioritizedReplayBuffer(capacity=replay_buffer_size)
 
 # Load previous model if it exists
-model_loaded, loaded_stats, epsilon = load_model(model, optimizer)
+model_loaded, loaded_stats, epsilon = load_model(model, optimizer, epsilon_start)
 if model_loaded:
     episode_stats = loaded_stats
     print("Loaded previous model and training stats")
-
-def load_best_transitions(filename="best_transitions.pt"):
-    """Load the best transitions from a file with error handling"""
-    try:
-        return torch.load(filename, weights_only=False)
-    except Exception as e:
-        print(f"Error loading transitions: {e}")
-        return []
 
 # Load best transitions if they exist
 best_transitions = load_best_transitions()
@@ -314,63 +210,6 @@ if hasattr(env, "video_recorder") and env.video_recorder is not None:
     env.video_recorder = None
 
 env.close()
-
-def save_stats(stats):
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"episode_stats_{timestamp}.json"
-    with open(filename, "w") as f:
-        json.dump(stats, f)
-
-save_stats(episode_stats)
-
-def save_best_transitions(transitions, filename="best_transitions.pt"):
-    """Save the best transitions to a file with error handling"""
-    try:
-        # Convert tensors to CPU before saving
-        processed_transitions = []
-        for state, action, reward, next_state, done in transitions:
-            processed_transitions.append((
-                state.cpu().numpy() if torch.is_tensor(state) else state,
-                action,
-                reward,
-                next_state.cpu().numpy() if torch.is_tensor(next_state) else next_state,
-                done
-            ))
-        torch.save(processed_transitions, filename)
-        print(f"Successfully saved {len(processed_transitions)} transitions to {filename}")
-    except Exception as e:
-        print(f"Error saving transitions: {e}")
-
-def load_best_transitions(filename="best_transitions.pt"):
-    """Load the best transitions from a file with error handling"""
-    try:
-        return torch.load(filename, weights_only=False)
-    except Exception as e:
-        print(f"Error loading transitions: {e}")
-        return []
-
-def save_model(model, optimizer, episode_stats, filename="santa_fe_lstm.pt"):
-    # Save the model, optimizer state, and training stats
-    torch.save({
-        'model_state_dict': model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        'episode_stats': episode_stats,
-        'epsilon': epsilon
-    }, filename)
-
-def load_model(model, optimizer, filename="santa_fe_lstm.pt"):
-    # Load the model and optimizer state
-    try:
-        checkpoint = torch.load(filename)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        episode_stats = checkpoint['episode_stats']
-        epsilon = checkpoint['epsilon']
-        return True, episode_stats, epsilon
-    except FileNotFoundError:
-        return False, [], epsilon_start
-
-# Add after the episode loop (before env.close())
 
 # Sort episodes by reward and save the transitions from the best 200 episodes
 best_episodes.sort(key=lambda x: x[0], reverse=True)
