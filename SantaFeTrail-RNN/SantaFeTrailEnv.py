@@ -23,8 +23,12 @@ original_trail = ([(0, 0), (0, 1), (0, 2), (0, 3),
 
 
 class SantaFeTrailEnv(gym.Env):
-    def __init__(self, size: int = 32, food_locations=None):
+    metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
+    
+    def __init__(self, size: int = 32, food_locations=None, render_mode=None):
+        super().__init__()
         self.size = size
+        self.render_mode = render_mode
         # Internal agent location (x, y) - consistent with Cartesian, (0,0) bottom-left
         self._agent_location = np.array([0, 0]) 
         
@@ -42,7 +46,7 @@ class SantaFeTrailEnv(gym.Env):
         self.original_food_locations = set(original_trail) 
         self._food_locations = set()
 
-        self.observation_space = spaces.Box(low=0, high=1, shape=(6, self.size, self.size), dtype=np.float32)
+        self.observation_space = spaces.Box(low=0, high=1, shape=(1,), dtype=np.float32)
         self.action_space = spaces.Discrete(3)
 
         self.fig = None
@@ -58,23 +62,14 @@ class SantaFeTrailEnv(gym.Env):
         return x_final, y_final
 
     def _get_obs(self):
-        obs = np.zeros((6, self.size, self.size), dtype=np.float32)
-
-        # Channel 0: Food locations (y is row, x is col)
-        for fx, fy in self._food_locations:
-            if 0 <= fx < self.size and 0 <= fy < self.size:
-                obs[0, fy, fx] = 1.0 
-
-        # Channel 1: Agent's position (y is row, x is col)
-        ax, ay = self._agent_location 
-        if (0 <= ax < self.size) and (0 <= ay < self.size):
-            obs[1, ay, ax] = 1.0
-
-        # Channels 2-5: Agent's direction (y is row, x is col)
-        if (0 <= ax < self.size) and (0 <= ay < self.size):
-            obs[2 + self._agent_direction, ay, ax] = 1.0
-
-        return obs
+        dir_vec = self._directions_map[self._agent_direction]
+        front = self._agent_location + dir_vec
+        fx, fy = front
+        if (0 <= fx < self.size) and (0 <= fy < self.size):
+            has_food = 1.0 if (fx, fy) in self._food_locations else 0.0
+        else:
+            has_food = 0.0
+        return np.array([has_food], dtype=np.float32)
 
     def step(self, action):
         if action == 0:  # turn left (counter-clockwise)
@@ -124,68 +119,41 @@ class SantaFeTrailEnv(gym.Env):
         return self._get_obs(), {}
     
     def render(self, mode="human"):
-        if self.fig is None:
-            self.fig, self.ax = plt.subplots(figsize=(6, 6))
-            self.imshow_obj = self.ax.imshow(np.zeros((self.size, self.size, 3), dtype=np.uint8),
-                                              interpolation='none', origin='lower') 
-            # Title reflects the net effect of the transformation on the original image
-            self.ax.set_title("Santa Fe Trail (Original Trail Rotated 90 degrees CCW)") 
-            self.ax.set_xticks([]) 
-            self.ax.set_yticks([]) 
-            self.ax.set_aspect('equal', adjustable='box') 
-            self.ax.set_xlim(-0.5, self.size - 0.5) 
-            self.ax.set_ylim(-0.5, self.size - 0.5)
+        if self.render_mode == "rgb_array" or mode == "rgb_array":
+            # Return an RGB array of the current state
+            # Example: return np.zeros((height, width, 3), dtype=np.uint8)
+            return self._get_rgb_array()
+        elif self.render_mode == "human" or mode == "human":
+            # Optionally, display to screen
+            pass
 
-            self.agent_patch = Polygon([(0,0), (0,0), (0,0)], closed=True, color='red')
-            self.ax.add_patch(self.agent_patch)
-            plt.ion() 
-            plt.show(block=False)
+    def _get_rgb_array(self):
+        # Create a blank white image
+        img = np.ones((self.size, self.size, 3), dtype=np.uint8) * 255
 
-        grid = np.zeros((self.size, self.size, 3), dtype=np.uint8)  # RGB image
-
-        # Draw food as green squares
+        # Draw food as green
         for fx, fy in self._food_locations:
-            grid[fy, fx] = [0, 255, 0] 
+            if 0 <= fx < self.size and 0 <= fy < self.size:
+                img[fy, fx] = [0, 200, 0]
 
-        self.imshow_obj.set_data(grid)
+        # Draw agent as red
+        ax, ay = self._agent_location
+        if 0 <= ax < self.size and 0 <= ay < self.size:
+            img[ay, ax] = [200, 0, 0]
 
-        x_agent, y_agent = self._agent_location 
+            # Draw agent direction as a blue pixel in front of agent
+            dir_vec = self._directions_map[self._agent_direction]
+            front = self._agent_location + dir_vec
+            fx, fy = front
+            if 0 <= fx < self.size and 0 <= fy < self.size:
+                img[fy, fx] = [0, 0, 200]
+
+        # Upscale for visibility (optional, e.g. 10x)
+        scale = 10
+        img = np.kron(img, np.ones((scale, scale, 1), dtype=np.uint8))
+
+        return img
         
-        # Vertex definitions for agent's triangle (relative to its cell)
-        # These remain the same, as they define orientation based on the agent's internal _agent_direction.
-        if self._agent_direction == 0:  # right (+X)
-            verts_local = [
-                (0.9, 0.5), # Tip on the right
-                (0.1, 0.1), # Bottom-left base
-                (0.1, 0.9)  # Top-left base
-            ]
-        elif self._agent_direction == 1:  # up (+Y)
-            verts_local = [
-                (0.5, 0.9), # Tip on the top
-                (0.1, 0.1), # Bottom-left base
-                (0.9, 0.1)  # Bottom-right base
-            ]
-        elif self._agent_direction == 2:  # left (-X)
-            verts_local = [
-                (0.1, 0.5), # Tip on the left
-                (0.9, 0.1), # Bottom-right base
-                (0.9, 0.9)  # Top-right base
-            ]
-        elif self._agent_direction == 3:  # down (-Y)
-            verts_local = [
-                (0.5, 0.1), # Tip on the bottom
-                (0.1, 0.9), # Top-left base
-                (0.9, 0.9)  # Top-right base
-            ]
-        
-        # Translate local vertices to global grid coordinates for matplotlib
-        verts_global = [(x_agent + v[0], y_agent + v[1]) for v in verts_local]
-
-        self.agent_patch.set_xy(verts_global)
-        self.fig.canvas.draw_idle()
-        self.fig.canvas.flush_events()
-        plt.pause(0.001)
-
     def close(self):
         if self.fig is not None:
             plt.close(self.fig)

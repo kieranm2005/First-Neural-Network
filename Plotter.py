@@ -40,9 +40,9 @@ def plot_training_results_from_files():
     cnn_file = get_latest_stats_file(os.path.join(base, 'SantaFeTrail-CNN'))
     rnn_file = get_latest_stats_file(os.path.join(base, 'SantaFeTrail-RNN'))
     snn_file = get_latest_stats_file(os.path.join(base, 'SantaFeTrail-SNN'))
-    cnn_rewards = load_rewards_from_json(cnn_file)[::10]
-    rnn_rewards = load_rewards_from_json(rnn_file)[::10]
-    snn_rewards = load_rewards_from_json(snn_file)[::10]
+    cnn_rewards = load_rewards_from_json(cnn_file)[::50]
+    rnn_rewards = load_rewards_from_json(rnn_file)[::50]
+    snn_rewards = load_rewards_from_json(snn_file)[::50]
     plt.figure(figsize=(12, 6))
     if cnn_rewards:
         plt.plot(np.arange(0, len(cnn_rewards)*10, 10), cnn_rewards, label='CNN Rewards', color='blue')
