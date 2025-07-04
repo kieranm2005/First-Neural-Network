@@ -135,30 +135,35 @@ for episode in range(num_episodes):
             obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
 
             # Process batches
-            obs_batch = torch.stack([torch.tensor(o, dtype=torch.float32, device=device).squeeze(0) 
-                         if isinstance(o, np.ndarray) else o.squeeze(0) 
-                         for o in obs_batch])
-            next_obs_batch = torch.stack([torch.tensor(o, dtype=torch.float32, device=device).squeeze(0) 
-                              if isinstance(o, np.ndarray) else o.squeeze(0) 
-                              for o in next_obs_batch])
+            obs_batch = torch.stack([
+                torch.tensor(o, dtype=torch.float32).to(device).squeeze(0)
+                if isinstance(o, np.ndarray) else o.to(device).squeeze(0)
+                for o in obs_batch
+            ])
+            next_obs_batch = torch.stack([
+                torch.tensor(o, dtype=torch.float32).to(device).squeeze(0)
+                if isinstance(o, np.ndarray) else o.to(device).squeeze(0)
+                for o in next_obs_batch
+            ])
             action_batch = torch.tensor(action_batch, dtype=torch.long, device=device)
             reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
             done_batch = torch.tensor([float(d) for d in done_batch], dtype=torch.float32, device=device)
 
-            # Q(s, a)
-            q_values = model(obs_batch).gather(1, action_batch.unsqueeze(1)).squeeze(1)
+            # Ensure batches are on the correct device
+            obs_batch = obs_batch.to(device)
+            next_obs_batch = next_obs_batch.to(device)
 
-            # max_a' Q(s', a')
+            # CrossQ update
+            q_logits = model(obs_batch)  # shape: [batch, num_actions]
             with torch.no_grad():
                 next_q_values = target_model(next_obs_batch)
-                max_next_q_values = next_q_values.max(1)[0]
-                target = reward_batch + (1 - done_batch) * gamma * max_next_q_values
-
-            # Compute TD errors and loss
-            td_errors = q_values - target
-            per_sample_loss = td_errors.pow(2)
+                target_actions = next_q_values.argmax(dim=1)  # shape: [batch]
+            target_dist = torch.zeros_like(q_logits)
+            target_dist[range(q_logits.size(0)), target_actions] = 1.0
+            log_probs = torch.log_softmax(q_logits, dim=1)
+            loss_per_sample = -(target_dist * log_probs).sum(dim=1)
             weights_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
-            loss = (per_sample_loss * weights_tensor).mean()
+            loss = (loss_per_sample * weights_tensor).mean()
 
             # Update network
             optimizer.zero_grad()
@@ -166,8 +171,8 @@ for episode in range(num_episodes):
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
-            # Update priorities
-            new_priorities = np.abs(td_errors.detach().cpu().numpy()) + 1e-6
+            # Update priorities (use loss as proxy for TD error)
+            new_priorities = loss_per_sample.detach().cpu().numpy() + 1e-6
             prioritized_replay_buffer.update_priorities(indices, new_priorities)
 
         step_count += 1
