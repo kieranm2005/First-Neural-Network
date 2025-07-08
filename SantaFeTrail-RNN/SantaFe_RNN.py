@@ -21,7 +21,7 @@ gym.register(
     id="gymnasium_env/SantaFeTrail-v0",
     entry_point="SantaFeTrailEnv:SantaFeTrailEnv",
     reward_threshold=89,
-    max_episode_steps=150,
+    max_episode_steps=400,
 )
 
 # Initializing environment

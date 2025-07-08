@@ -7,7 +7,7 @@ import random
 from collections import deque
 import optuna
 
-from SantaFe_CNN import SantaFeCNN  # Adjust this import if needed
+from SantaFe_CNN_v2 import SantaFeCNN  # Adjust this import if needed
 
 def objective(trial):
     # Hyperparameter search space
