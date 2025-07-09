@@ -16,6 +16,7 @@ class TrailMaker:
         self.trail_name = trail_name
         self.selected_squares = set()
         self.fig, self.ax = plt.subplots(figsize=(8, 8))
+        self.fig.canvas.manager.set_window_title(self.trail_name)
         self.ax.set_xlim(0, grid_size)
         self.ax.set_ylim(0, grid_size)
         self.ax.set_xticks([])

@@ -1,3 +1,8 @@
+import sys
+import os
+sys.path.append(os.path.abspath("../Environments"))
+sys.path.append(os.path.abspath("/u/kieranm/Documents/Python/First-Neural-Network/Environments"))  # Add absolute Environments path to sys.path
+
 import snntorch as snn
 import torch
 import torch.nn as nn
@@ -6,13 +11,11 @@ import gymnasium as gym
 import numpy as np
 from collections import deque
 import random
-from SantaFeTrailEnv import SantaFeTrailEnv
+from HorizontalLineEnv import SantaFeTrailEnv
 
 # Constants
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-INPUT_SIZE = 16  # 4x4 grid
 HIDDEN_SIZE = 64
-OUTPUT_SIZE = 4  # up, down, left, right
 NUM_STEPS = 25
 GAMMA = 0.99
 BETA = 0.5  # For RLeaky neurons
@@ -22,7 +25,6 @@ class SNNBase(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super().__init__()
         self.fc1 = nn.Linear(input_size, hidden_size)
-        self.bn1 = nn.BatchNorm1d(hidden_size)
         self.hidden1 = snn.RLeaky(beta=BETA, linear_features=hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.hidden2 = snn.RLeaky(beta=BETA, linear_features=hidden_size)
@@ -94,6 +96,34 @@ class PrioritizedReplay:
             self.priorities[idx] = max(priority, self.min_priority)
 
 class SNNTrainer:
+    def _update_reinforce(self, states, actions, rewards, entropy_weight=0.01):
+        # Convert to tensors
+        states = torch.FloatTensor(np.stack(states)).to(DEVICE)
+        actions = torch.LongTensor(actions).to(DEVICE)
+        rewards = torch.FloatTensor(rewards).to(DEVICE)
+        # Compute returns (discounted rewards)
+        returns = []
+        G = 0
+        for r in reversed(rewards):
+            G = r + GAMMA * G
+            returns.insert(0, G)
+        returns = torch.FloatTensor(returns).to(DEVICE)
+        # Normalize returns
+        if len(returns) > 1:
+            returns = (returns - returns.mean()) / (returns.std() + 1e-8)
+        # Compute log probabilities
+        logits = self.model(states)
+        log_probs = torch.log(logits + 1e-8)
+        selected_log_probs = log_probs.gather(1, actions.unsqueeze(1)).squeeze(1)
+        # Entropy regularization
+        entropy = -torch.sum(logits * log_probs, dim=1).mean()
+        # Policy loss
+        policy_loss = -torch.mean(selected_log_probs * returns)
+        loss = policy_loss - entropy_weight * entropy
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=0.5)
+        self.optimizer.step()
     def __init__(self, env, algorithm='dqn'):
         self.env = env
         self.algorithm = algorithm
@@ -288,20 +318,26 @@ class SNNTrainer:
         with open(filename, "w") as f:
             json.dump(stats, f)
 
-def main():
-    # Register and create environment
-    gym.register(
-        id="gymnasium_env/SantaFeTrail-v0",
-        entry_point="SantaFeTrailEnv:SantaFeTrailEnv",
-        reward_threshold=89,
-        max_episode_steps=600
-    )
-    env = gym.make("gymnasium_env/SantaFeTrail-v0")
 
-    # Train with REINFORCE
+def main():
+    # Register and create HorizontalLineEnv environment
+    gym.register(
+        id="gymnasium_env/HorizontalLine-v0",
+        entry_point="HorizontalLineEnv:SantaFeTrailEnv",
+        reward_threshold=32,
+        max_episode_steps=48
+    )
+    env = gym.make("gymnasium_env/HorizontalLine-v0")
+
+    # Dynamically determine input and output sizes
+    obs_shape = env.observation_space.shape
+    input_size = int(np.prod(obs_shape))
+    output_size = env.action_space.n
+
+    # Patch SNNTrainer to accept input/output sizes
+    # Train with REINFORCE using the original SNNTrainer class
     trainer = SNNTrainer(env, algorithm='reinforce')
     episode_rewards, episode_epsilons = trainer.train_reinforce()
-
     # Save results
     np.save("episode_rewards_reinforce.npy", episode_rewards)
     np.save("episode_epsilons_reinforce.npy", episode_epsilons)

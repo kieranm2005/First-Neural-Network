@@ -8,8 +8,8 @@ import os
 import TrailReader as tr
 
 # Define the original trail coordinates. Assuming (x,y) with (0,0) at bottom-left.
-original_trail = (tr.load_trail_coordinates('/u/kieranm/Documents/Python/First-Neural-Network/Environments/Trails/RightTurn_coordinates.txt'))
-agent_location = np.array([14, ])  # Agent starts at (0, 0)
+original_trail = (tr.load_trail_coordinates('/u/kieranm/Documents/Python/First-Neural-Network/Environments/Trails/VerticalLine_coordinates.txt'))
+agent_location = np.array([16, 0])  # Agent starts at (0, 0)
 
 class SantaFeTrailEnv(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
