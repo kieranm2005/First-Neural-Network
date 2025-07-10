@@ -1,6 +1,5 @@
 import sys
 import os
-sys.path.append(os.path.abspath("../Environments"))
 sys.path.append(os.path.abspath("/u/kieranm/Documents/Python/First-Neural-Network/Environments"))  # Add absolute Environments path to sys.path
 
 from HorizontalLineEnv import SantaFeTrailEnv
@@ -17,6 +16,7 @@ from torch.optim.lr_scheduler import StepLR
 import json
 import datetime
 import os
+from tqdm import trange
 
 from rnn_model import SantaFeLSTM
 from replay_buffer import PrioritizedReplayBuffer
@@ -89,14 +89,17 @@ reward_threshold = 1  # Initial value
 
 n_step = 4
 n_step_buffer = deque(maxlen=n_step)
-for episode in range(num_episodes):
+
+save_every = 50  # Save stats/model every N episodes
+
+for episode in trange(num_episodes, desc="Training"):  # Progress bar
     obs, info = env.reset()
     obs = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
     done = False
     total_reward = 0
     episode_transitions = []
+    n_step_buffer.clear()  # Clear n-step buffer at start of episode
 
-    episode_transitions = []
     while not done:
         # Epsilon-greedy action selection
         if random.random() < epsilon:
@@ -130,18 +133,13 @@ for episode in range(num_episodes):
                 R += n_step_buffer[i][2] * (gamma ** i)
                 if n_step_buffer[i][4]:  # if done
                     break
-            
             state, action, _, _, _ = n_step_buffer[0]
-            _, _, _, next_state, done = n_step_buffer[-1]
-            
+            _, _, _, next_state, done_flag = n_step_buffer[-1]
             # Store n-step transition
-            replay_buffer.append((state, action, R, next_state, done))
-            
+            replay_buffer.append((state, action, R, next_state, done_flag))
             # Sample from prioritized replay buffer
             batch, indices, weights = prioritized_replay_buffer.sample(batch_size)
             obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
-
-            # Process batches
             obs_batch = torch.stack([
                 torch.tensor(o, dtype=torch.float32).to(device).squeeze(0)
                 if isinstance(o, np.ndarray) else o.to(device).squeeze(0)
@@ -155,29 +153,21 @@ for episode in range(num_episodes):
             action_batch = torch.tensor(action_batch, dtype=torch.long, device=device)
             reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
             done_batch = torch.tensor([float(d) for d in done_batch], dtype=torch.float32, device=device)
-
-            # Ensure batches are on the correct device
-            obs_batch = obs_batch.to(device)
-            next_obs_batch = next_obs_batch.to(device)
-
             # CrossQ update
-            q_logits = model(obs_batch)  # shape: [batch, num_actions]
+            q_logits = model(obs_batch)
             with torch.no_grad():
                 next_q_values = target_model(next_obs_batch)
-                target_actions = next_q_values.argmax(dim=1)  # shape: [batch]
+                target_actions = next_q_values.argmax(dim=1)
             target_dist = torch.zeros_like(q_logits)
             target_dist[range(q_logits.size(0)), target_actions] = 1.0
             log_probs = torch.log_softmax(q_logits, dim=1)
             loss_per_sample = -(target_dist * log_probs).sum(dim=1)
             weights_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
             loss = (loss_per_sample * weights_tensor).mean()
-
-            # Update network
             optimizer.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-
             # Update priorities (use loss as proxy for TD error)
             new_priorities = loss_per_sample.detach().cpu().numpy() + 1e-6
             prioritized_replay_buffer.update_priorities(indices, new_priorities)
@@ -186,35 +176,41 @@ for episode in range(num_episodes):
         if step_count % target_update_freq == 0:
             target_model.load_state_dict(model.state_dict())
 
-        epsilon = max(epsilon_end, epsilon * epsilon_decay)
-
+    # End of episode
     print(f"Episode {episode+1} | Reward: {total_reward:.2f} | Epsilon: {epsilon:.3f}")
     episode_stats.append({
         "episode": episode + 1,
         "total_reward": total_reward,
         "epsilon": epsilon
     })
-    # Use average reward over last 10 episodes as metric
     avg_reward = np.mean([stat["total_reward"] for stat in episode_stats[-10:]])
+    print(f"[INFO] Avg Reward (last 10): {avg_reward:.2f}")
     scheduler.step(avg_reward)
-
-    # Dynamically set reward_threshold to 75th percentile of all episode rewards so far
-    if len(episode_stats) >= 4:  # Only update if enough episodes
+    if len(episode_stats) >= 4:
         rewards = [stat["total_reward"] for stat in episode_stats]
         reward_threshold = np.percentile(rewards, 75)
-
-    # After the episode ends, filter by reward
     if total_reward >= reward_threshold:
         for transition in episode_transitions:
             replay_buffer.append(transition)
             prioritized_replay_buffer.add(*transition)
-    # Optionally, store all transitions in recent_buffer for analysis
-
-    # Store episode if it's among the best
     best_episodes.append((total_reward, episode_transitions))
     best_episodes.sort(key=lambda x: x[0], reverse=True)
     if len(best_episodes) > 200:
         best_episodes.pop()
+    # Decay epsilon at end of episode
+    epsilon = max(epsilon_end, epsilon * epsilon_decay)
+    # Periodic saving
+    if (episode + 1) % save_every == 0:
+        save_model(model, optimizer, episode_stats, epsilon)
+        save_best_transitions([t for _, ep in best_episodes[:200] for t in ep])
+        # Save episode stats to Data/SantaFeTrail-RNN
+        stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-RNN')
+        os.makedirs(stats_dir, exist_ok=True)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
+        with open(stats_path, "w") as f:
+            json.dump(episode_stats, f)
+        print(f"Saved model, best transitions, and episode stats at episode {episode+1}")
 
 # Clean up video recorder
 if hasattr(env, "video_recorder") and env.video_recorder is not None:
@@ -233,3 +229,12 @@ for _, transitions in best_episodes[:200]:
 save_best_transitions(best_transitions)
 save_model(model, optimizer, episode_stats, epsilon)
 print(f"Saved {len(best_transitions)} transitions from best episodes")
+
+# Save episode stats to Data/SantaFeTrail-RNN
+stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-RNN')
+os.makedirs(stats_dir, exist_ok=True)
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
+with open(stats_path, "w") as f:
+    json.dump(episode_stats, f)
+print(f"Saved episode stats to {stats_path}")

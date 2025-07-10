@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 from collections import deque
+import os, datetime, json
 '''To Do:
 1. Vectorized Environment: Use `gym.vector.make` for parallel environments.
 2. Collect statistics: Use `env.get_episode_stats()` to collect statistics.
@@ -174,6 +175,10 @@ for episode in range(num_episodes):
 env.close()
 
 # Optionally, save to file after training:
-import json
-with open("episode_stats.json", "w") as f:
+stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-CNN')
+os.makedirs(stats_dir, exist_ok=True)
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
+with open(stats_path, "w") as f:
     json.dump(episode_stats, f)
+print(f"Saved episode stats to {stats_path}")

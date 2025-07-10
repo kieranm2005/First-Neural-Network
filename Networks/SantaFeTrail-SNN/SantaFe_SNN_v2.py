@@ -312,11 +312,14 @@ class SNNTrainer:
 
     @staticmethod
     def save_stats(stats):
-        import json, datetime
+        import json, datetime, os
+        stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-SNN')
+        os.makedirs(stats_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"episode_stats_{timestamp}.json"
+        filename = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
         with open(filename, "w") as f:
             json.dump(stats, f)
+        print(f"Saved episode stats to {filename}")
 
 
 def main():

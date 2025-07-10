@@ -9,6 +9,7 @@ import random
 from SantaFeTrailEnv import SantaFeTrailEnv
 import torch.nn.functional as F
 import math
+import os, json, datetime
 
 # Fractional LIF neuron model for SNNs
 class FractionalLIF(nn.Module):
@@ -146,10 +147,18 @@ class SantaFeTrailSNNTrainer:
 if __name__ == "__main__":
     observation_shape = (1, 16)  # Example shape, adjust as needed
     num_actions = 4  # Example number of actions, adjust as needed
-    
     model = SantaFeTrailSNN(observation_shape, num_actions)
     trainer = SantaFeTrailSNNTrainer(model, model.register_initialize_env())
-    
     trainer.train()
-    
+    # Save episode stats to Data/SantaFeTrail-FSNN
+    stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-FSNN')
+    os.makedirs(stats_dir, exist_ok=True)
+    # If you have episode_stats, save it here. If not, you may need to collect it in train().
+    # For now, just save a placeholder.
+    episode_stats = []  # TODO: collect real stats in train()
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
+    with open(stats_path, "w") as f:
+        json.dump(episode_stats, f)
+    print(f"Saved episode stats to {stats_path}")
     print("Training completed.")

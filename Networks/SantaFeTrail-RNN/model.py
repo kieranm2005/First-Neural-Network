@@ -5,7 +5,7 @@ import torch.nn.functional as F
 class SantaFeLSTM(nn.Module):
     def __init__(self, input_size, hidden_size, output_size):
         super(SantaFeLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_size=input_size[0], hidden_size=hidden_size, batch_first=True)
+        self.lstm = nn.LSTM(input_size=input_size, hidden_size=hidden_size, batch_first=True)
         self.fc_value = nn.Linear(hidden_size, 128)
         self.fc_advantage = nn.Linear(hidden_size, 128)
         self.value = nn.Linear(128, 1)
