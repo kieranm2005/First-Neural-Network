@@ -11,4 +11,4 @@ replay_buffer_size = 50000
 recent_buffer_size = 5000
 hidden_size = 512 #optuna
 target_update_freq = 1000
-n_step = 2 #optuna
+n_step = 4 #optuna

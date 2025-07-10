@@ -1,3 +1,10 @@
+import sys
+import os
+sys.path.append(os.path.abspath("../Environments"))
+sys.path.append(os.path.abspath("/u/kieranm/Documents/Python/First-Neural-Network/Environments"))  # Add absolute Environments path to sys.path
+
+from HorizontalLineEnv import SantaFeTrailEnv
+
 import gymnasium as gym
 from gymnasium.wrappers import RecordEpisodeStatistics, RecordVideo
 import torch
@@ -18,14 +25,14 @@ from config import num_episodes, batch_size, gamma, epsilon_start, epsilon_end, 
 
 # Registering custom environment
 gym.register(
-    id="gymnasium_env/SantaFeTrail-v0",
-    entry_point="SantaFeTrailEnv:SantaFeTrailEnv",
-    reward_threshold=89,
-    max_episode_steps=400,
-)
+        id="gymnasium_env/HorizontalLine-v0",
+        entry_point="HorizontalLineEnv:SantaFeTrailEnv",
+        reward_threshold=32,
+        max_episode_steps=48
+    )
 
 # Initializing environment
-env = gym.make("gymnasium_env/SantaFeTrail-v0", render_mode="rgb_array")
+env = gym.make("gymnasium_env/HorizontalLine-v0", render_mode="rgb_array")
 
 video_folder = "./videos"
 env = RecordVideo(
@@ -78,7 +85,7 @@ best_episodes = []
 # Training loop
 step_count = 0
 episode_stats = []
-reward_threshold = 20  # Initial value
+reward_threshold = 1  # Initial value
 
 n_step = 4
 n_step_buffer = deque(maxlen=n_step)
