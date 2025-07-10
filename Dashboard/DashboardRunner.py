@@ -9,7 +9,7 @@ and average rewards for each network type. Usage: Run this script to launch the 
 
 from nicegui import ui
 import numpy as np
-from matplotlib import pyplot as plt
+import plotly.graph_objs as go
 import os, json
 
 ui.markdown('# Neural Network Dashboard')
@@ -19,10 +19,10 @@ ui.markdown('# Neural Network Dashboard')
 NN_TYPES = ['RNN', 'CNN', 'SNN', 'FSNN']
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 stats_dirs = {
-    'RNN': os.path.join(BASE_DIR, '../SantaFeTrail-RNN'),
-    'CNN': os.path.join(BASE_DIR, '../SantaFeTrail-CNN'),
-    'SNN': os.path.join(BASE_DIR, '../SantaFeTrail-SNN'),
-    'FSNN': os.path.join(BASE_DIR, '../SantaFeTrail-FSNN'),
+    'RNN': os.path.join(BASE_DIR, '../Data/SantaFeTrail-RNN'),
+    'CNN': os.path.join(BASE_DIR, '../Data/SantaFeTrail-CNN'),
+    'SNN': os.path.join(BASE_DIR, '../Data/SantaFeTrail-SNN'),
+    'FSNN': os.path.join(BASE_DIR, '../Data/SantaFeTrail-FSNN'),
 }
 
 def get_latest_stats_file(nn_type):
@@ -69,55 +69,118 @@ def load_stats(nn_type):
     print(f"[DEBUG] Loaded {len(rewards)} rewards for {nn_type}. Sample: {rewards[:3] if rewards else 'None'}")
     return rewards, stats
 
-
+def get_stats_files_with_dates(nn_type):
+    dir_path = stats_dirs.get(nn_type)
+    if not dir_path or not os.path.isdir(dir_path):
+        return []
+    files = [entry.name for entry in os.scandir(dir_path) if entry.is_file() and entry.name.startswith('episode_stats_') and entry.name.endswith('.json')]
+    from datetime import datetime
+    file_info = []
+    for f in files:
+        ts = f.replace('episode_stats_', '').replace('.json', '')
+        try:
+            dt = datetime.strptime(ts, "%Y%m%d_%H%M%S")
+        except ValueError:
+            try:
+                dt = datetime.strptime(ts, "%Y%m%d")
+            except ValueError:
+                dt = None
+        file_info.append((f, dt))
+    # Sort by datetime descending (most recent first)
+    file_info = sorted(file_info, key=lambda x: x[1] if x[1] else datetime.min, reverse=True)
+    return file_info
 
 # --- UI Setup ---
-with ui.pyplot(figsize=(5, 3)) as plot:
-    plt.plot([], [])
+plotly_fig = go.Figure()
+plotly_fig.add_trace(go.Scatter(x=[], y=[], mode='lines', name='Reward'))
+plotly_plot = ui.plotly(plotly_fig).classes('w-full h-64')
 
 stats_md = ui.markdown('### Best Reward: Worst Reward: Average Reward:')
 
-def update_dashboard(nn_type):
-    rewards, stats = load_stats(nn_type)
-    with plot:
-        plt.clf()  # Clear the current figure
-        ax = plt.gca()  # Get the current axes
-        if rewards:
-            ax.plot(rewards, label='Reward')
-            ax.set_xlabel('Episode')
-            ax.set_ylabel('Reward')
-            ax.set_title(f'{nn_type} Rewards')
-            ax.legend()
-            best = np.max(rewards)
-            worst = np.min(rewards)
-            avg = np.mean(rewards)
-            stats_text = f"### Best Reward: {best:.2f}  Worst Reward: {worst:.2f}  Average Reward: {avg:.2f}"
-        else:
-            stats_text = "### Best Reward: N/A  Worst Reward: N/A  Average Reward: N/A"
+# State for menu
+selected_nn = {'type': NN_TYPES[0]}
+selected_file = {'name': None}
+
+file_dropdown = None
+
+def update_dashboard(nn_type, file_name=None):
+    # If no file_name, use most recent
+    files = get_stats_files_with_dates(nn_type)
+    if not files:
+        rewards, stats = [], None
+        stats_text = "### Best Reward: N/A  Worst Reward: N/A  Average Reward: N/A"
+        plotly_fig.data = []
+        plotly_fig.add_trace(go.Scatter(x=[], y=[], mode='lines', name='Reward'))
+        plotly_fig.update_layout(title=f'{nn_type} Rewards', xaxis_title='Episode', yaxis_title='Reward', showlegend=True)
+        plotly_plot.update()
         stats_md.set_content(stats_text)
+        return
+    if file_name is None:
+        file_name = files[0][0]
+    path = os.path.join(stats_dirs[nn_type], file_name)
+    with open(path) as f:
+        stats = json.load(f)
+    rewards = [ep['total_reward'] for ep in stats if 'total_reward' in ep]
+    if rewards:
+        x = list(range(1, len(rewards) + 1))
+        plotly_fig.data = []
+        plotly_fig.add_trace(go.Scatter(x=x, y=rewards, mode='lines', name='Reward'))
+        plotly_fig.update_layout(
+            title=f'{nn_type} Rewards',
+            xaxis_title='Episode',
+            yaxis_title='Reward',
+            showlegend=True
+        )
+        best = np.max(rewards)
+        worst = np.min(rewards)
+        avg = np.mean(rewards)
+        stats_text = f"### Best Reward: {best:.2f}  Worst Reward: {worst:.2f}  Average Reward: {avg:.2f}"
+    else:
+        plotly_fig.data = []
+        plotly_fig.add_trace(go.Scatter(x=[], y=[], mode='lines', name='Reward'))
+        plotly_fig.update_layout(title=f'{nn_type} Rewards', xaxis_title='Episode', yaxis_title='Reward', showlegend=True)
+        stats_text = "### Best Reward: N/A  Worst Reward: N/A  Average Reward: N/A"
+    plotly_plot.update()
+    stats_md.set_content(stats_text)
+    selected_file['name'] = file_name
+    # Update dropdown menu if needed
+    if file_dropdown:
+        file_dropdown.options = [(f"{dt.strftime('%Y-%m-%d %H:%M:%S') if dt else f}", f) for f, dt in files]
+        file_dropdown.value = file_name
 
-def create_nn_button(nn):
-    ui.button(nn, on_click=lambda: update_dashboard(nn)).props('push')
+def on_nn_change(nn_type):
+    selected_nn['type'] = nn_type
+    files = get_stats_files_with_dates(nn_type)
+    if files:
+        update_dashboard(nn_type, files[0][0])
+    else:
+        update_dashboard(nn_type, None)
+    # Update dropdown menu
+    if file_dropdown:
+        file_dropdown.options = [(f"{dt.strftime('%Y-%m-%d %H:%M:%S') if dt else f}", f) for f, dt in files]
+        file_dropdown.value = files[0][0] if files else None
+
+def on_file_change(file_name):
+    update_dashboard(selected_nn['type'], file_name)
 
 with ui.button_group().props('rounded glossy'):
     for nn in NN_TYPES:
-        create_nn_button(nn)
+        ui.button(nn, on_click=lambda nn=nn: on_nn_change(nn)).props('push')
 
-with ui.button_group().props('rounded glossy'):
-    # Find the first NN type with available stats
-    default_nn_type = None
-    for nn in NN_TYPES:
-        rewards, stats = load_stats(nn)
-        if rewards:
-            default_nn_type = nn
-            break
-    if default_nn_type is None:
-        default_nn_type = NN_TYPES[0]  # fallback if none found
+# Dropdown for stats file selection
+files = get_stats_files_with_dates(NN_TYPES[0])
+file_options = [(f"{dt.strftime('%Y-%m-%d %H:%M:%S') if dt else f}", f) for f, dt in files]
+option_values = [v for _, v in file_options]
+# Ensure file_dropdown_value is valid before setting it
+file_dropdown_value = file_options[0][1] if file_options else None
 
-    update_dashboard(default_nn_type)
+# Update dropdown initialization to handle empty options
+file_dropdown = ui.select(
+    options=file_options,
+    value=file_dropdown_value,
+    on_change=lambda e: on_file_change(e.value)
+).props('outlined dense')
 
-ui.run()
-update_dashboard(NN_TYPES[0])
-
+update_dashboard(NN_TYPES[0], file_dropdown_value)
 ui.run()
 

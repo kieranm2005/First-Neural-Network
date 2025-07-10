@@ -201,6 +201,8 @@ for episode in trange(num_episodes, desc="Training"):  # Progress bar
     epsilon = max(epsilon_end, epsilon * epsilon_decay)
     # Periodic saving
     if (episode + 1) % save_every == 0:
+        save_stats(episode_stats)
+        # Save model and optimizer state
         save_model(model, optimizer, episode_stats, epsilon)
         save_best_transitions([t for _, ep in best_episodes[:200] for t in ep])
         # Save episode stats to Data/SantaFeTrail-RNN

@@ -1,10 +1,13 @@
 import torch
 import json
 import datetime
+import os
 
 def save_stats(stats):
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"episode_stats_{timestamp}.json"
+    directory = "Data/SantaFeTrail-RNN"
+    os.makedirs(directory, exist_ok=True)
+    filename = os.path.join(directory, f"episode_stats_{timestamp}.json")
     with open(filename, "w") as f:
         json.dump(stats, f)
 
