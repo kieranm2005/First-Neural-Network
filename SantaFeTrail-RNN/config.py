@@ -1,6 +1,6 @@
 # Hyperparameters and config for SantaFeTrail-RNN
 
-num_episodes = 600
+num_episodes = 6000
 batch_size = 64
 gamma = 0.9765900240544403 #optuna
 epsilon_start = 1.0

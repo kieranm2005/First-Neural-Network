@@ -231,5 +231,5 @@ for _, transitions in best_episodes[:200]:
 
 # Save best transitions and final model
 save_best_transitions(best_transitions)
-save_model(model, optimizer, episode_stats)
+save_model(model, optimizer, episode_stats, epsilon)
 print(f"Saved {len(best_transitions)} transitions from best episodes")
