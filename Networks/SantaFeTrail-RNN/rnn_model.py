@@ -13,7 +13,13 @@ class SantaFeLSTM(nn.Module):
 
     def forward(self, x):
         x, _ = self.lstm(x)
-        x = x[:, -1, :]
+        # If x is 3D (batch, seq, hidden), take last time step; if 2D, use as is
+        if x.dim() == 3:
+            x = x[:, -1, :]
+        elif x.dim() == 2:
+            pass  # already (batch, hidden)
+        else:
+            raise ValueError(f"Unexpected LSTM output shape: {x.shape}")
         value = F.relu(self.fc_value(x))
         advantage = F.relu(self.fc_advantage(x))
         value = self.value(value)

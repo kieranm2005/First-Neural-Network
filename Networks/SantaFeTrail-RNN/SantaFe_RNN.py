@@ -22,14 +22,15 @@ from rnn_model import SantaFeLSTM
 from replay_buffer import PrioritizedReplayBuffer
 from utils import save_stats, save_best_transitions, load_best_transitions, save_model, load_model
 from config import num_episodes, batch_size, gamma, epsilon_start, epsilon_end, epsilon_decay, learning_rate, replay_buffer_size, recent_buffer_size, hidden_size, target_update_freq, n_step
+from HorizontalLineEnv import original_trail
 
 # Registering custom environment
 gym.register(
-        id="gymnasium_env/HorizontalLine-v0",
-        entry_point="HorizontalLineEnv:SantaFeTrailEnv",
-        reward_threshold=32,
-        max_episode_steps=48
-    )
+    id="gymnasium_env/HorizontalLine-v0",
+    entry_point="HorizontalLineEnv:SantaFeTrailEnv",
+    reward_threshold=len(original_trail),
+    max_episode_steps=int(len(original_trail)*1.7)
+)
 
 # Initializing environment
 env = gym.make("gymnasium_env/HorizontalLine-v0", render_mode="rgb_array")
@@ -38,7 +39,7 @@ video_folder = "./videos"
 env = RecordVideo(
     env,
     video_folder=video_folder,
-    episode_trigger=lambda episode_id: episode_id % 200 == 0,
+    episode_trigger=lambda episode_id: episode_id % 50 == 0,  # Record every 50 episodes
     name_prefix="SantaFeLSTM"
 )
 
@@ -96,8 +97,10 @@ for episode in trange(num_episodes, desc="Training"):  # Progress bar
         if random.random() < epsilon:
             action = env.action_space.sample()
         else:
+            # Ensure obs has shape (batch, seq, input_dim) when calling model for action selection
+            obs_for_model = obs.unsqueeze(0) if obs.dim() == 2 else obs
             with torch.no_grad():
-                q_values = model(obs)
+                q_values = model(obs_for_model)
                 action = torch.argmax(q_values, dim=1).item()
 
         next_obs, reward, terminated, truncated, info = env.step(action)
@@ -120,6 +123,10 @@ for episode in trange(num_episodes, desc="Training"):  # Progress bar
             action_batch = torch.tensor(action_batch, dtype=torch.long, device=device)
             reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
             done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device)
+
+            # Ensure obs_batch and next_obs_batch have the correct shape for the RNN model
+            obs_batch = obs_batch.unsqueeze(1) if obs_batch.dim() == 2 else obs_batch
+            next_obs_batch = next_obs_batch.unsqueeze(1) if next_obs_batch.dim() == 2 else next_obs_batch
 
             # Select the Q-value for each action in the batch using gather
             raw_model_out = model(obs_batch)
