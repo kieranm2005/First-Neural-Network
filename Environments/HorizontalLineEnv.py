@@ -3,9 +3,9 @@ import gymnasium as gym
 from gymnasium import spaces
 import matplotlib.pyplot as plt
 from matplotlib.patches import Polygon
-#import TrailReader
 import os
-import Tools.TrailReader as tr
+import sys
+import TrailReader as tr
 
 # Define the original trail coordinates. Assuming (x,y) with (0,0) at bottom-left.
 original_trail = (tr.load_trail_coordinates('/u/kieranm/Documents/Python/First-Neural-Network/Environments/Trails/VerticalLine_coordinates.txt'))

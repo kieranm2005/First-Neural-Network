@@ -42,8 +42,8 @@ env = RecordVideo(
     name_prefix="SantaFeLSTM"
 )
 
+# Simplify to standard DQN logic
 replay_buffer = deque(maxlen=replay_buffer_size)
-recent_buffer = deque(maxlen=recent_buffer_size)
 
 # Set device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -60,10 +60,8 @@ target_model.eval()
 
 loss_fn = nn.SmoothL1Loss()
 optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'min', patience=10, factor=0.5)
 
 epsilon = epsilon_start
-prioritized_replay_buffer = PrioritizedReplayBuffer(capacity=replay_buffer_size)
 
 # Load previous model if it exists
 model_loaded, loaded_stats, epsilon = load_model(model, optimizer, epsilon_start)
@@ -76,7 +74,6 @@ best_transitions = load_best_transitions()
 if best_transitions:
     for transition in best_transitions:
         replay_buffer.append(transition)
-        prioritized_replay_buffer.add(*transition)
     print(f"Loaded {len(best_transitions)} best transitions")
 
 # Track best episodes
@@ -85,20 +82,14 @@ best_episodes = []
 # Training loop
 step_count = 0
 episode_stats = []
-reward_threshold = 1  # Initial value
-
-n_step = 4
-n_step_buffer = deque(maxlen=n_step)
 
 save_every = 50  # Save stats/model every N episodes
 
 for episode in trange(num_episodes, desc="Training"):  # Progress bar
     obs, info = env.reset()
-    obs = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+    obs = torch.tensor(obs, dtype=torch.float32, device=device).unsqueeze(0)
     done = False
     total_reward = 0
-    episode_transitions = []
-    n_step_buffer.clear()  # Clear n-step buffer at start of episode
 
     while not done:
         # Epsilon-greedy action selection
@@ -111,67 +102,46 @@ for episode in trange(num_episodes, desc="Training"):  # Progress bar
 
         next_obs, reward, terminated, truncated, info = env.step(action)
         done = terminated or truncated
-        next_obs_tensor = torch.tensor(next_obs, dtype=torch.float32, device=device).unsqueeze(0).unsqueeze(0)
+        next_obs_tensor = torch.tensor(next_obs, dtype=torch.float32, device=device).unsqueeze(0)
         total_reward += reward
 
         # Store transition in replay buffer
         transition = (obs, action, reward, next_obs_tensor, done)
         replay_buffer.append(transition)
-        recent_buffer.append(transition)
-        prioritized_replay_buffer.add(*transition)
-        episode_transitions.append(transition)
         obs = next_obs_tensor
 
-        # Store in n-step buffer
-        n_step_buffer.append((obs, action, reward, next_obs_tensor, done))
-
-        # N-step bootstrapping and training
-        if len(n_step_buffer) == n_step and len(prioritized_replay_buffer.buffer) >= batch_size:
-            # Calculate n-step return
-            R = 0
-            for i in range(n_step):
-                R += n_step_buffer[i][2] * (gamma ** i)
-                if n_step_buffer[i][4]:  # if done
-                    break
-            state, action, _, _, _ = n_step_buffer[0]
-            _, _, _, next_state, done_flag = n_step_buffer[-1]
-            # Store n-step transition
-            replay_buffer.append((state, action, R, next_state, done_flag))
-            # Sample from prioritized replay buffer
-            batch, indices, weights = prioritized_replay_buffer.sample(batch_size)
+        # Train the model if replay buffer has enough samples
+        if len(replay_buffer) >= batch_size:
+            batch = random.sample(replay_buffer, batch_size)
             obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
-            obs_batch = torch.stack([
-                torch.tensor(o, dtype=torch.float32).to(device).squeeze(0)
-                if isinstance(o, np.ndarray) else o.to(device).squeeze(0)
-                for o in obs_batch
-            ])
-            next_obs_batch = torch.stack([
-                torch.tensor(o, dtype=torch.float32).to(device).squeeze(0)
-                if isinstance(o, np.ndarray) else o.to(device).squeeze(0)
-                for o in next_obs_batch
-            ])
+
+            obs_batch = torch.cat(obs_batch)
+            next_obs_batch = torch.cat(next_obs_batch)
             action_batch = torch.tensor(action_batch, dtype=torch.long, device=device)
             reward_batch = torch.tensor(reward_batch, dtype=torch.float32, device=device)
-            done_batch = torch.tensor([float(d) for d in done_batch], dtype=torch.float32, device=device)
-            # CrossQ update
-            q_logits = model(obs_batch)
+            done_batch = torch.tensor(done_batch, dtype=torch.float32, device=device)
+
+            # Select the Q-value for each action in the batch using gather
+            raw_model_out = model(obs_batch)
+            if raw_model_out.dim() == 3:  # (batch_size, seq_len, num_actions)
+                model_out = raw_model_out[:, -1, :]  # Use last time step
+            else:
+                model_out = raw_model_out
+            q_values = model_out.gather(1, action_batch.unsqueeze(1)).squeeze(1)
             with torch.no_grad():
-                next_q_values = target_model(next_obs_batch)
-                target_actions = next_q_values.argmax(dim=1)
-            target_dist = torch.zeros_like(q_logits)
-            target_dist[range(q_logits.size(0)), target_actions] = 1.0
-            log_probs = torch.log_softmax(q_logits, dim=1)
-            loss_per_sample = -(target_dist * log_probs).sum(dim=1)
-            weights_tensor = torch.tensor(weights, dtype=torch.float32, device=device)
-            loss = (loss_per_sample * weights_tensor).mean()
+                target_out = target_model(next_obs_batch)
+                if target_out.dim() == 3:
+                    target_out = target_out[:, -1, :]
+                next_q_values = target_out.max(1)[0]
+                targets = reward_batch + (1 - done_batch) * gamma * next_q_values
+
+            # Compute loss and update model
+            loss = loss_fn(q_values, targets)
             optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            # Update priorities (use loss as proxy for TD error)
-            new_priorities = loss_per_sample.detach().cpu().numpy() + 1e-6
-            prioritized_replay_buffer.update_priorities(indices, new_priorities)
 
+        # Update target model periodically
         step_count += 1
         if step_count % target_update_freq == 0:
             target_model.load_state_dict(model.state_dict())
@@ -183,36 +153,20 @@ for episode in trange(num_episodes, desc="Training"):  # Progress bar
         "total_reward": total_reward,
         "epsilon": epsilon
     })
-    avg_reward = np.mean([stat["total_reward"] for stat in episode_stats[-10:]])
-    print(f"[INFO] Avg Reward (last 10): {avg_reward:.2f}")
-    scheduler.step(avg_reward)
-    if len(episode_stats) >= 4:
-        rewards = [stat["total_reward"] for stat in episode_stats]
-        reward_threshold = np.percentile(rewards, 75)
-    if total_reward >= reward_threshold:
-        for transition in episode_transitions:
-            replay_buffer.append(transition)
-            prioritized_replay_buffer.add(*transition)
-    best_episodes.append((total_reward, episode_transitions))
-    best_episodes.sort(key=lambda x: x[0], reverse=True)
-    if len(best_episodes) > 200:
-        best_episodes.pop()
-    # Decay epsilon at end of episode
+
+    # Decay epsilon
     epsilon = max(epsilon_end, epsilon * epsilon_decay)
-    # Periodic saving
+
+    # Save model and stats periodically
     if (episode + 1) % save_every == 0:
-        save_stats(episode_stats)
-        # Save model and optimizer state
         save_model(model, optimizer, episode_stats, epsilon)
-        save_best_transitions([t for _, ep in best_episodes[:200] for t in ep])
-        # Save episode stats to Data/SantaFeTrail-RNN
         stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-RNN')
         os.makedirs(stats_dir, exist_ok=True)
         timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
         with open(stats_path, "w") as f:
             json.dump(episode_stats, f)
-        print(f"Saved model, best transitions, and episode stats at episode {episode+1}")
+        print(f"Saved model and episode stats at episode {episode+1}")
 
 # Clean up video recorder
 if hasattr(env, "video_recorder") and env.video_recorder is not None:
