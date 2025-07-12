@@ -39,7 +39,7 @@ video_folder = "./videos"
 env = RecordVideo(
     env,
     video_folder=video_folder,
-    episode_trigger=lambda episode_id: episode_id % 50 == 0,  # Record every 50 episodes
+    episode_trigger=lambda episode_id: episode_id % 200 == 0,  # Record every 200 episodes
     name_prefix="SantaFeLSTM"
 )
 
