@@ -22,3 +22,5 @@ __pycache__/
 *.npy
 /Hussein-NN
 *.csv
+/SantaFeTrail-SNN/videos
+/SantaFeTrail-RNN/videos
