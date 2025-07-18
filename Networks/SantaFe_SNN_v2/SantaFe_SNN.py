@@ -46,7 +46,7 @@ gym.register(
     id="gymnasium_env/HorizontalLine-v0",
     entry_point="HorizontalLineEnv:SantaFeTrailEnv",
     reward_threshold=len(original_trail),
-    max_episode_steps=int(len(original_trail)*1.7)
+    max_episode_steps=int(len(original_trail)*3)
 )
 
 env = gym.make("gymnasium_env/HorizontalLine-v0", render_mode="rgb_array")
@@ -55,7 +55,7 @@ video_folder = "./videos"
 env = RecordVideo(
     env,
     video_folder=video_folder,
-    episode_trigger=lambda episode_id: episode_id % 200 == 0,
+    episode_trigger=lambda episode_id: episode_id % 20 == 0,
     name_prefix="SantaFeSNN"
 )
 
@@ -134,10 +134,9 @@ for episode in trange(num_episodes, desc="Training"):
             consecutive_turns = 0
             last_turn_action = None
 
-        # Discourage more than 8 consecutive turns in one direction
+        # Discourage more than 10 consecutive turns in one direction
         if consecutive_turns > 8:
             reward = -5  # Penalty for spinning
-            done = True  # Optionally end the episode
 
         next_obs, reward, terminated, truncated, info = env.step(action)
         done = done or terminated or truncated
