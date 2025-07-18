@@ -17,6 +17,8 @@ for fname in os.listdir(positions_dir):
             for pos in positions:
                 # Ensure pos is a list or tuple of length 2
                 if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                    #flip y-coordinate to match grid orientation
+                    pos = (pos[0], size - 1 - pos[1])  # Adjust y-coordinate for grid orientation
                     x, y = pos
                     if 0 <= x < size and 0 <= y < size:
                         freq_grid[y, x] += 1  # y is row, x is column
