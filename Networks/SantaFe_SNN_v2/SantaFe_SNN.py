@@ -190,6 +190,16 @@ for episode in trange(num_episodes, desc="Training"):
         "epsilon": epsilon
     })
 
+    # --- Save agent positions for this episode ---
+    positions_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-SNN/Positions')
+    os.makedirs(positions_dir, exist_ok=True)
+    positions_path = os.path.join(positions_dir, f"episode_{episode+1}_positions.json")
+    # Convert all positions to lists for JSON serialization
+    agent_positions_serializable = [pos.tolist() if hasattr(pos, "tolist") else pos for pos in agent_positions]
+    with open(positions_path, "w") as f:
+        json.dump(agent_positions_serializable, f)
+    # --------------------------------------------
+
     epsilon = max(epsilon_end, epsilon * epsilon_decay)
 
     if (episode + 1) % save_every == 0:

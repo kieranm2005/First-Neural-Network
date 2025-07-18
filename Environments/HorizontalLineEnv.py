@@ -74,7 +74,10 @@ class SantaFeTrailEnv(gym.Env):
         terminated = len(self._food_locations) == 0
         truncated = False
 
-        return self._get_obs(), reward, terminated, truncated, {}
+        obs = self._get_obs()
+        info = {}
+        info['position'] = self._agent_location # Track agent's coordinates
+        return obs, reward, terminated, truncated, info
 
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
@@ -93,7 +96,10 @@ class SantaFeTrailEnv(gym.Env):
             self.starting_reward = 1
             self._food_locations.discard(current_loc_tuple)
             
-        return self._get_obs(), {}
+        obs = self._get_obs()
+        info = {}
+        info['position'] = self._agent_location  # or whatever variable tracks the agent's coordinates
+        return obs, info
     
     def render(self, mode="human"):
         if self.render_mode == "rgb_array" or mode == "rgb_array":
