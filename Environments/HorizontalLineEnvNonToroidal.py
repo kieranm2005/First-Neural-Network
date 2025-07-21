@@ -7,12 +7,11 @@ import os
 import sys
 import TrailReader as tr
 
-# TO DO: Make grid wrap around
-
 # Define the original trail coordinates. Assuming (x,y) with (0,0) at bottom-left.
-original_trail = (tr.load_trail_coordinates('/u/kieranm/Documents/Python/First-Neural-Network/Environments/Trails/GapTrail3_coordinates.txt'))
+original_trail = (tr.load_trail_coordinates('/u/kieranm/Documents/Python/First-Neural-Network/Environments/Trails/SantaFe_coordinates.txt'))
 agent_location = np.array(original_trail[0])  # Agent starts at the first loaded coordinate
-class SantaFeTrailEnv(gym.Env):
+
+class SantaFeTrailEnvNonToroidal(gym.Env):
     metadata = {"render_modes": ["rgb_array"], "render_fps": 4}
     
     def __init__(self, size: int = 32, food_locations=None, render_mode=None): # Default grid size is 32x32
@@ -46,9 +45,12 @@ class SantaFeTrailEnv(gym.Env):
 
     def _get_obs(self):
         dir_vec = self._directions_map[self._agent_direction]
-        front = (self._agent_location + dir_vec) % self.size  # Toroidal wrap
+        front = self._agent_location + dir_vec
         fx, fy = front
-        has_food = 1.0 if (fx, fy) in self._food_locations else 0.0
+        if (0 <= fx < self.size) and (0 <= fy < self.size):
+            has_food = 1.0 if (fx, fy) in self._food_locations else 0.0 
+        else:
+            has_food = 0.0
         return np.array([has_food], dtype=np.float32)
 
     def step(self, action):
@@ -58,8 +60,9 @@ class SantaFeTrailEnv(gym.Env):
             self._agent_direction = (self._agent_direction - 1 + 4) % 4
         elif action == 2:  # move forward
             move = self._directions_map[self._agent_direction]
-            new_loc = (self._agent_location + move) % self.size  # Toroidal wrap
-            self._agent_location = new_loc
+            new_loc = self._agent_location + move
+            if (0 <= new_loc[0] < self.size) and (0 <= new_loc[1] < self.size):
+                self._agent_location = new_loc
 
         reward = 0
         current_loc_tuple = tuple(self._agent_location)
@@ -139,4 +142,3 @@ class SantaFeTrailEnv(gym.Env):
             self.ax = None
             self.imshow_obj = None
             self.agent_patch = None
-

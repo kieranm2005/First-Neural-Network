@@ -25,7 +25,7 @@ for fname in os.listdir(positions_dir):
 
 plt.figure(figsize=(8, 8))
 plt.imshow(freq_grid, cmap='hot', interpolation='nearest', origin='lower')
-plt.colorbar(label='Visit Frequency')
+plt.colorbar(label='Visit Frequency', fraction=0.046, pad=0.04)
 plt.title('Santa Fe Trail Agent Position Heatmap')
 plt.xlabel('X')
 plt.ylabel('Y')

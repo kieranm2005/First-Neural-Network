@@ -46,7 +46,7 @@ gym.register(
     id="gymnasium_env/HorizontalLine-v0",
     entry_point="HorizontalLineEnv:SantaFeTrailEnv",
     reward_threshold=len(original_trail),
-    max_episode_steps=int(len(original_trail)*3)
+    max_episode_steps=int(len(original_trail)*1.5)
 )
 
 env = gym.make("gymnasium_env/HorizontalLine-v0", render_mode="rgb_array")
@@ -55,7 +55,7 @@ video_folder = "./videos"
 env = RecordVideo(
     env,
     video_folder=video_folder,
-    episode_trigger=lambda episode_id: episode_id % 20 == 0,
+    episode_trigger=lambda episode_id: episode_id % 50 == 0,
     name_prefix="SantaFeSNN"
 )
 
@@ -136,7 +136,7 @@ for episode in trange(num_episodes, desc="Training"):
 
         # Discourage more than 10 consecutive turns in one direction
         if consecutive_turns > 8:
-            reward = -5  # Penalty for spinning
+            reward = -200  # Penalty for spinning
 
         next_obs, reward, terminated, truncated, info = env.step(action)
         done = done or terminated or truncated
@@ -218,19 +218,19 @@ if hasattr(env, "video_recorder") and env.video_recorder is not None:
 
 env.close()
 
-best_episodes.sort(key=lambda x: x[0], reverse=True)
-best_transitions = []
-for _, transitions in best_episodes[:20]:
-    best_transitions.extend(transitions)
+best_episodes.sort(key=lambda x: x[0], reverse=True) # Sort by total reward
+best_transitions = [] # Collect transitions from the best episodes
+for _, transitions in best_episodes[:20]: # Take top 20 best episodes
+    best_transitions.extend(transitions) # Ensure we don't exceed the buffer size
 
-save_best_transitions(best_transitions)
-save_model(model, optimizer, episode_stats, epsilon)
-print(f"Saved {len(best_transitions)} transitions from best episodes")
+save_best_transitions(best_transitions) # Save best transitions to file
+save_model(model, optimizer, episode_stats, epsilon) # Save final model
+print(f"Saved {len(best_transitions)} transitions from best episodes") # Print number of transitions saved
 
-stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-SNN')
-os.makedirs(stats_dir, exist_ok=True)
-timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json")
+stats_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-SNN') # Ensure stats directory exists
+os.makedirs(stats_dir, exist_ok=True) # Make directory if it doesn't exist
+timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S") # Format timestamp for filename
+stats_path = os.path.join(stats_dir, f"episode_stats_{timestamp}.json") # Save episode stats to file
 with open(stats_path, "w") as f:
     json.dump(episode_stats, f)
-print(f"Saved episode stats to {stats_path}")
+print(f"Saved episode stats to {stats_path}") # Print path to saved stats file
