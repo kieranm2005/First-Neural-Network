@@ -138,7 +138,7 @@ for episode in trange(num_episodes, desc="Training"):
         if consecutive_turns > 8:
             reward = -200  # Penalty for spinning
 
-        next_obs, reward, terminated, truncated, info = env.step(action)
+        next_obs, reward, terminated, truncated, info = env.step(action) 
         done = done or terminated or truncated
         next_obs_tensor = torch.tensor(next_obs, dtype=torch.float32, device=device).unsqueeze(0)
         total_reward += reward
@@ -150,6 +150,10 @@ for episode in trange(num_episodes, desc="Training"):
         if len(replay_buffer) >= batch_size:
             batch = random.sample(replay_buffer, batch_size)
             obs_batch, action_batch, reward_batch, next_obs_batch, done_batch = zip(*batch)
+
+            obs_batch = [torch.tensor(o, dtype=torch.float32, device=device) if not torch.is_tensor(o) else o for o in obs_batch]
+            next_obs_batch = [torch.tensor(o, dtype=torch.float32, device=device) if not torch.is_tensor(o) else o for o in next_obs_batch]
+
 
             obs_batch = torch.cat(obs_batch)
             next_obs_batch = torch.cat(next_obs_batch)
@@ -193,10 +197,15 @@ for episode in trange(num_episodes, desc="Training"):
     positions_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../Data/SantaFeTrail-SNN/Positions')
     os.makedirs(positions_dir, exist_ok=True)
     positions_path = os.path.join(positions_dir, f"episode_{episode+1}_positions.json")
-    # Convert all positions to lists for JSON serialization
     agent_positions_serializable = [pos.tolist() if hasattr(pos, "tolist") else pos for pos in agent_positions]
     with open(positions_path, "w") as f:
         json.dump(agent_positions_serializable, f)
+    # --------------------------------------------
+
+    # --- Collect transitions for best_episodes ---
+    episode_length = len(agent_positions)
+    episode_transitions = list(replay_buffer)[-episode_length:]
+    best_episodes.append((total_reward, episode_transitions))
     # --------------------------------------------
 
     epsilon = max(epsilon_end, epsilon * epsilon_decay)
