@@ -5,6 +5,14 @@ import sys
 import os
 import json
 
+''' TO DO:
+- Graphs should be next to each other, not below
+- Top row: toroidal heatmap and reward graph
+- Bottom row: non-toroidal heatmap and reward graph
+- Add flag to data collection to indicate toroidal vs non-toroidal
+- Add toggle for showing trail over top of heatmap'''
+
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../Tools')))
 from HeatmapPlotter import plot_heatmap
 
@@ -14,6 +22,9 @@ def main():
     # Dropdown menu for model selection
     model_options = ['SNN', 'RNN']
     selected_model = ui.select(model_options, value='SNN', label='Select Model').classes('w-48')
+
+    # Toggle for showing trail over heatmap
+    show_trail = ui.checkbox('Show Trail Over Heatmap', value=False)
 
     ui.separator()
 
@@ -42,6 +53,46 @@ def main():
             ax.set_title(f'Santa Fe Trail Agent Position Heatmap ({model_type})')
             ax.set_xlabel('X')
             ax.set_ylabel('Y')
+            fig.tight_layout()
+
+    def render_trail_coordinates(): #Render trail coordinates over heatmap
+        with ui.matplotlib(figsize=(8, 8)).figure as fig:
+            model_type = selected_model.value
+            trail_file = os.path.join(os.path.dirname(__file__), f'../Data/SantaFeTrail-{model_type}/trail_coordinates.json')
+            if os.path.exists(trail_file):
+                with open(trail_file, 'r') as f:
+                    trail_coords = json.load(f)
+                ax = fig.gca()
+                ax.plot(*zip(*trail_coords), marker='o', color='blue', markersize=2, label='Trail Coordinates')
+                ax.set_title(f'Trail Coordinates ({model_type})')
+                ax.set_xlabel('X')
+                ax.set_ylabel('Y')
+                ax.legend()
+                fig.tight_layout()
+
+    def render_reward_graph(): #Render rewards per episode
+        with ui.matplotlib(figsize=(6, 4)).figure as fig:
+            model_type = selected_model.value
+            stats_dir = os.path.join(os.path.dirname(__file__), f'../Data/SantaFeTrail-{model_type}')
+            # Find the latest episode_stats file
+            reward_data = []
+            episode_data = []
+            if os.path.exists(stats_dir):
+                stat_files = [f for f in os.listdir(stats_dir) if f.startswith('episode_stats_') and f.endswith('.json')]
+                if stat_files:
+                    stat_files.sort(reverse=True)
+                    stats_path = os.path.join(stats_dir, stat_files[0])
+                    with open(stats_path, 'r') as f:
+                        stats = json.load(f)
+                        for entry in stats:
+                            if 'episode' in entry and 'total_reward' in entry:
+                                episode_data.append(entry['episode'])
+                                reward_data.append(entry['total_reward'])
+            ax = fig.gca()
+            ax.plot(episode_data, reward_data, marker='o', linestyle='-', color='blue')
+            ax.set_title(f'Reward per Episode ({model_type})')
+            ax.set_xlabel('Episode')
+            ax.set_ylabel('Total Reward')
             fig.tight_layout()
     # Layout for 4 graphs: heatmap and reward side by side, others below
     with ui.column().classes('w-full'):
