@@ -19,12 +19,14 @@ from HeatmapPlotter import plot_heatmap
 def main():
     ui.label('Santa Fe Trail Dashboard').style('font-size: 2rem; font-weight: bold; margin-bottom: 1rem;')
 
-    # Dropdown menu for model selection
-    model_options = ['SNN', 'RNN']
-    selected_model = ui.select(model_options, value='SNN', label='Select Model').classes('w-48')
+    with ui.card():
 
-    # Toggle for showing trail over heatmap
-    show_trail = ui.checkbox('Show Trail Over Heatmap', value=False)
+        # Dropdown menu for model selection
+        model_options = ['SNN', 'RNN']
+        selected_model = ui.select(model_options, value='SNN', label='Select Model').classes('w-48')
+
+        # Toggle for showing trail over heatmap
+        show_trail = ui.checkbox('Show Trail Over Heatmap', value=False)
 
     ui.separator()
 
@@ -62,6 +64,7 @@ def main():
             if os.path.exists(trail_file):
                 with open(trail_file, 'r') as f:
                     trail_coords = json.load(f)
+                    print(f'Trail coordinates loaded: {len(trail_coords)} points')
                 ax = fig.gca()
                 ax.plot(*zip(*trail_coords), marker='o', color='blue', markersize=2, label='Trail Coordinates')
                 ax.set_title(f'Trail Coordinates ({model_type})')
@@ -69,6 +72,8 @@ def main():
                 ax.set_ylabel('Y')
                 ax.legend()
                 fig.tight_layout()
+            else: # If no trail coordinates found, show a message
+                ui.label('No trail coordinates found for the selected model.').style('color: red;')
 
     def render_reward_graph(): #Render rewards per episode
         with ui.matplotlib(figsize=(6, 4)).figure as fig:
@@ -105,6 +110,7 @@ def main():
             reward_slot.clear()
             render_heatmap()
             render_reward_graph()
+            render_trail_coordinates()
 
         def render_heatmap():
             with heatmap_slot:
@@ -127,6 +133,14 @@ def main():
                     ax = fig.gca()
                     im = ax.imshow(freq_grid, cmap='hot', interpolation='nearest', origin='lower')
                     fig.colorbar(im, ax=ax, label='Visit Frequency', fraction=0.046, pad=0.04)
+                    # Optionally overlay trail coordinates if checkbox is checked
+                    if show_trail.value:
+                        trail_file = os.path.join(os.path.dirname(__file__), f'../Data/SantaFeTrail-{model_type}/trail_coordinates.json')
+                        if os.path.exists(trail_file):
+                            with open(trail_file, 'r') as f:
+                                trail_coords = json.load(f)
+                            ax.plot(*zip(*trail_coords), marker='o', color='blue', markersize=2, label='Trail Coordinates')
+                            ax.legend()
                     ax.set_title(f'Santa Fe Trail Agent Position Heatmap ({model_type})')
                     ax.set_xlabel('X')
                     ax.set_ylabel('Y')
@@ -159,9 +173,10 @@ def main():
                     fig.tight_layout()
 
         render_all()
-        def update_all(e):
+        def update_all(e=None):
             render_all()
         selected_model.on('update:model-value', update_all)
+        show_trail.on('update:value', update_all)
 
     ui.run()
 

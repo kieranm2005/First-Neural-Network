@@ -1,8 +1,4 @@
-'''Generate trail environments by visually selecting squares on a grid'''
-# 1. Prompt user for grid size
-# 2. Create a grid of squares
-# 3. Allow user to select squares to form a trail, clicking to toggle squares
-# 4. Save the selected squares as an array of coordinates to a text file
+# A tool for manually creating trails.
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle

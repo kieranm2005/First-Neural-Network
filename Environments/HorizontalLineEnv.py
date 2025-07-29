@@ -94,10 +94,10 @@ class SantaFeTrailEnv(gym.Env):
             
         obs = self._get_obs()
         info = {}
-        info['position'] = self._agent_location  # or whatever variable tracks the agent's coordinates
+        info['position'] = self._agent_location 
         return obs, info
     
-    def render(self, mode="human"):
+    def render(self, mode="human"): # Rendering the environment using squares on a grid
         if self.render_mode == "rgb_array" or mode == "rgb_array":
             return self._get_rgb_array()
         elif self.render_mode == "human" or mode == "human":
